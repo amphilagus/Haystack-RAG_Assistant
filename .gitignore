@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# RAG Project Specific
+raw_data/
+chroma_db/
+collection_metadata.json
+.env
+.openai_api_key
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+
+# Windows specific
+Thumbs.db
+desktop.ini
+
+# Data files (可选，根据需要取消注释)
+# raw_data/
+
+# Embedding cache
+.cache/
+*_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Windows PowerShell profile
+*.ps1.bak 

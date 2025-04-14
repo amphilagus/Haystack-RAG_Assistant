@@ -20,10 +20,11 @@ from haystack_integrations.document_stores.chroma import ChromaDocumentStore
 from haystack.components.embedders import SentenceTransformersDocumentEmbedder, SentenceTransformersTextEmbedder
 from haystack.components.retrievers.in_memory import InMemoryEmbeddingRetriever
 from haystack_integrations.components.retrievers.chroma import ChromaEmbeddingRetriever
-from haystack.components.builders import PromptBuilder
-from haystack.components.generators import OpenAIGenerator
 from haystack.utils import Secret
 from tqdm import tqdm
+from haystack.components.builders import ChatPromptBuilder
+from haystack.components.generators.chat import OpenAIChatGenerator
+from haystack.dataclasses import ChatMessage
 
 # 导入自定义的CustomChromaDocumentStore
 # 先确保当前目录在sys.path中
@@ -182,21 +183,24 @@ class RAGPipeline:
         self.text_embedder.warm_up()
         self.document_embedder.warm_up()
         
-        # Initialize prompt template
-        self.prompt_template = """
+        # Initialize chat prompt template and chat messages
+        self.chat_template = [
+            ChatMessage.from_user(
+                """
         Answer the question based on the given context. If the answer cannot be derived from the context, 
-        say "I don't have enough information to answer this question." Include only information that is 
+        say "Sorry, I don't know either =-=" Include only information that is 
         present in the context and do not add any additional information.
-        
+
         Context:
         {% for document in documents %}
         {{ document.content }}
         {% endfor %}
-        
-        Question: {{ question }}
-        
+
+        Question: {{question}}
         Answer:
         """
+            )
+        ]
         
         # Create components
         try:
@@ -206,9 +210,9 @@ class RAGPipeline:
                 top_k=top_k
             )
             
-            self.prompt_builder = PromptBuilder(template=self.prompt_template)
+            self.prompt_builder = ChatPromptBuilder(template=self.chat_template)
             
-            self.generator = OpenAIGenerator(
+            self.generator = OpenAIChatGenerator(
                 model=llm_model,
                 api_key=Secret.from_token(self.api_key)
             )
@@ -254,7 +258,7 @@ class RAGPipeline:
             # Connect components
             pipeline.connect("text_embedder.embedding", "retriever.query_embedding")
             pipeline.connect("retriever", "prompt_builder.documents")
-            pipeline.connect("prompt_builder", "llm")
+            pipeline.connect("prompt_builder.prompt", "llm.messages")
             
             return pipeline
         except Exception as e:
@@ -279,7 +283,7 @@ class RAGPipeline:
                 
                 pipeline.connect("text_embedder.embedding", "retriever.query_embedding")
                 pipeline.connect("retriever", "prompt_builder.documents")
-                pipeline.connect("prompt_builder", "llm")
+                pipeline.connect("prompt_builder.prompt", "llm.messages")
                 
                 return pipeline
             except Exception as retry_error:
@@ -360,32 +364,17 @@ class RAGPipeline:
             Pipeline results containing the generated answer
         """
         try:
+            # 运行pipeline
             results = self.pipeline.run({
                 "text_embedder": {"text": query},
-                "prompt_builder": {"question": query}
+                "prompt_builder": {
+                    "question": query
+                    # 不再手动设置documents，因为它已经通过pipeline连接由retriever提供
+                }
             })
             return results
         except Exception as e:
-            error_message = str(e)
-            print(f"Pipeline error: {error_message}")
-            
-            # ChromaDB相关错误处理
-            if "Collection" in error_message and "already exists" in error_message:
-                print("重新连接到现有collection...")
-                
-                try:
-                    # 重新创建pipeline
-                    self.pipeline = self._create_pipeline()
-                    
-                    # 再次尝试查询
-                    return self.pipeline.run({
-                        "text_embedder": {"text": query},
-                        "prompt_builder": {"question": query}
-                    })
-                except Exception as retry_error:
-                    print(f"重新连接失败: {retry_error}")
-            
-            # 如果是其他错误或重试失败，重新抛出异常
+            # 抛出异常
             raise ValueError(f"查询处理失败: {e}")
 
     def get_answer(self, query: str) -> str:
@@ -407,8 +396,13 @@ class RAGPipeline:
         # Run the pipeline
         try:
             results = self.run(query)
-            if results and "llm" in results and "replies" in results["llm"]:
-                return results["llm"]["replies"][0]
+            # OpenAIChatGenerator返回responses而不是replies
+            if results and "llm" in results:
+                if "responses" in results["llm"]:
+                    # 获取第一个响应的内容
+                    return results["llm"]["responses"][0].content
+                elif "replies" in results["llm"]:  # 兼容旧版本
+                    return results["llm"]["replies"][0].text
             return "Sorry, I couldn't generate an answer."
         except Exception as e:
             print(f"Error generating answer: {e}")

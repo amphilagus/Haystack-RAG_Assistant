@@ -22,6 +22,7 @@ try {
 # 运行web界面
 try {
     Write-Host "Starting web interface..." -ForegroundColor Green
+    Write-Host "To exit: Press Ctrl+C in this terminal" -ForegroundColor Cyan
     python rag_assistant/main.py --interface web
 } catch {
     Write-Host "Error occurred while running the web interface." -ForegroundColor Red
@@ -30,4 +31,4 @@ try {
 }
 
 # 如果使用了虚拟环境，退出虚拟环境
-if (Test-Path "venv\Scripts\Activate.ps1") {deactivate} 
+if (Test-Path "venv\Scripts\Activate.ps1") {deactivate}

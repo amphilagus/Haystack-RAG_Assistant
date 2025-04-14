@@ -16,9 +16,18 @@ import markdown
 from haystack import Document
 from bs4 import BeautifulSoup
 
+# 添加docx支持
+try:
+    import docx
+    DOCX_SUPPORT = True
+except ImportError:
+    DOCX_SUPPORT = False
+    print("Warning: python-docx package not installed. DOCX file support will be disabled.")
+    print("To enable DOCX support, install with: pip install python-docx")
+
 def load_documents(directory_path: str, file_types: Optional[List[str]] = None) -> List[Document]:
     """
-    Load documents from a directory.
+    Load documents from a directory, including all subdirectories recursively.
     
     Args:
         directory_path: Path to the directory containing documents
@@ -29,31 +38,53 @@ def load_documents(directory_path: str, file_types: Optional[List[str]] = None) 
         List of Haystack Document objects
     """
     if file_types is None:
-        file_types = ['.pdf', '.txt', '.md', '.html', '.htm']
+        file_types = ['.pdf', '.txt', '.md', '.html', '.htm', '.docx']
     
     documents = []
     total_files = 0
     successful_files = 0
     failed_files = 0
     encoding_success = {}
+    directories_scanned = set()
     
-    print(f"Scanning directory: {directory_path}")
+    print(f"Scanning directory and all subdirectories: {directory_path}")
     print(f"Supported file types: {', '.join(file_types)}")
     print("This loader supports Chinese documents with multiple encodings (UTF-8, GB18030, GBK, GB2312, BIG5)")
     
-    # Count total files first
+    # Count total files first and gather directory information
     for root, _, files in os.walk(directory_path):
+        rel_path = os.path.relpath(root, directory_path)
+        if rel_path != '.':
+            directories_scanned.add(rel_path)
+        
         for file in files:
             if any(file.lower().endswith(ft) for ft in file_types):
                 total_files += 1
     
     if total_files == 0:
-        print(f"No supported files found in {directory_path}")
+        print(f"No supported files found in {directory_path} or its subdirectories")
         return []
     
-    print(f"Found {total_files} supported files to process")
+    subdirs_str = f" in {len(directories_scanned)} subdirectories" if directories_scanned else ""
+    print(f"Found {total_files} supported files to process{subdirs_str}")
     
+    # 显示扫描到的子目录
+    if directories_scanned:
+        print("Subdirectories that will be processed:")
+        for subdir in sorted(directories_scanned):
+            print(f"  - {subdir}")
+    
+    # 按照目录层级加载文档
     for root, _, files in os.walk(directory_path):
+        # 显示当前处理的目录
+        rel_path = os.path.relpath(root, directory_path)
+        dir_display = f"{rel_path}/" if rel_path != '.' else "(root)"
+        
+        # 检查当前目录是否有支持的文件
+        has_supported_files = any(any(file.lower().endswith(ft) for ft in file_types) for file in files)
+        if has_supported_files:
+            print(f"\nProcessing directory: {dir_display}")
+        
         for file in files:
             if any(file.lower().endswith(ft) for ft in file_types):
                 file_path = os.path.join(root, file)
@@ -66,6 +97,8 @@ def load_documents(directory_path: str, file_types: Optional[List[str]] = None) 
                         docs = load_markdown(file_path)
                     elif file.lower().endswith(('.html', '.htm')):
                         docs = load_html(file_path)
+                    elif file.lower().endswith('.docx'):
+                        docs = load_docx(file_path)
                     else:
                         continue
                     
@@ -76,18 +109,19 @@ def load_documents(directory_path: str, file_types: Optional[List[str]] = None) 
                         if hasattr(docs[0], 'meta') and 'encoding' in docs[0].meta:
                             encoding = docs[0].meta['encoding']
                             encoding_success[encoding] = encoding_success.get(encoding, 0) + 1
-                        print(f"Loaded {len(docs)} documents from {file}")
+                        print(f"  Loaded {len(docs)} segments from {file}")
                     else:
                         failed_files += 1
-                        print(f"No documents extracted from {file}")
+                        print(f"  No content extracted from {file}")
                 except Exception as e:
                     failed_files += 1
-                    print(f"Error loading {file}: {e}")
+                    print(f"  Error loading {file}: {e}")
     
     print(f"\nDocument loading summary:")
     print(f"Total files processed: {total_files}")
     print(f"Successfully loaded files: {successful_files}")
     print(f"Failed files: {failed_files}")
+    print(f"Total document segments created: {len(documents)}")
     
     if encoding_success:
         print("\nEncoding statistics for text files:")
@@ -268,6 +302,55 @@ def load_html(file_path: str) -> List[Document]:
     
     print(f"Error processing HTML file {file_path}: Unable to decode with any supported encoding")
     return []
+
+def load_docx(file_path: str) -> List[Document]:
+    """
+    Load and preprocess DOCX documents.
+    
+    Args:
+        file_path: Path to the DOCX file
+    
+    Returns:
+        List of Document objects
+    """
+    if not DOCX_SUPPORT:
+        print(f"DOCX support is disabled. Cannot process {file_path}")
+        return []
+    
+    documents = []
+    
+    try:
+        doc = docx.Document(file_path)
+        
+        # 处理普通文档内容
+        full_text = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                full_text.append(para.text)
+        
+        # 处理表格内容
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if row_text:
+                    full_text.append(" | ".join(row_text))
+        
+        text = "\n".join(full_text)
+        
+        if text.strip():
+            doc = Document(
+                content=text,
+                meta={
+                    "source": file_path,
+                    "file_type": "docx"
+                }
+            )
+            documents.append(doc)
+        
+    except Exception as e:
+        print(f"Error processing DOCX {file_path}: {e}")
+    
+    return documents
 
 def chunk_documents(documents: List[Document], chunk_size: int = 1000, chunk_overlap: int = 200) -> List[Document]:
     """

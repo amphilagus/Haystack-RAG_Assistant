@@ -50,7 +50,6 @@ class CustomChromaDocumentStore(ChromaDocumentStore):
         host: str = None,
         port: int = None,
         distance_function: str = "l2",
-        embedding_dim: int = None,
         metadata: dict = None,
         **embedding_function_params,
     ):
@@ -68,10 +67,7 @@ class CustomChromaDocumentStore(ChromaDocumentStore):
             metadata=metadata,
             **embedding_function_params,
         )
-        # 存储embedding_dim用于初始化
-        self._embedding_dim = embedding_dim
-        if embedding_dim and metadata is None:
-            self._metadata = {"hnsw:space": distance_function, "embedding_dim": embedding_dim}
+        # 不再存储和处理embedding_dim
     
     def _ensure_initialized(self):
         if not self._initialized:

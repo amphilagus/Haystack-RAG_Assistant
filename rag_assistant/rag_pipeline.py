@@ -36,15 +36,18 @@ try:
     # 先尝试相对路径导入
     from .custom_document_store import CustomChromaDocumentStore
     from .collection_metadata import save_collection_metadata, get_embedding_model, delete_collection_metadata
+    from .prompt_templates import get_template, get_all_templates
 except (ImportError, ValueError):
     # 如果失败，尝试绝对路径导入
     try:
         from rag_assistant.custom_document_store import CustomChromaDocumentStore
         from rag_assistant.collection_metadata import save_collection_metadata, get_embedding_model, delete_collection_metadata
+        from rag_assistant.prompt_templates import get_template, get_all_templates
     except ImportError:
         # 最后尝试直接导入
         from custom_document_store import CustomChromaDocumentStore
         from collection_metadata import save_collection_metadata, get_embedding_model, delete_collection_metadata
+        from prompt_templates import get_template, get_all_templates
 
 # 直接在脚本开头加载环境变量
 load_dotenv(override=True)
@@ -65,7 +68,9 @@ class RAGPipeline:
                 persist_dir: str = "../chroma_db",
                 collection_name: str = "documents",
                 reset_collection: bool = False,
-                hard_reset: bool = False):
+                hard_reset: bool = False,
+                use_llm: bool = True,
+                prompt_template: str = "balanced"):
         """
         Initialize the RAG pipeline.
         
@@ -78,217 +83,188 @@ class RAGPipeline:
             collection_name: Name of the Chroma collection to use
             reset_collection: Whether to reset (clear) the collection if it exists
             hard_reset: If True, completely delete the existing collection instead of creating a new one with timestamp
+            use_llm: Whether to include LLM in the pipeline
+            prompt_template: Prompt template to use (precise, balanced, creative)
         """
-        # Save parameters
-        self.embedding_model = embedding_model
-        self.llm_model = llm_model
-        self.top_k = top_k
+        # Save parameters as default settings
+        self.default_settings = {
+            "embedding_model": embedding_model,
+            "llm_model": llm_model,
+            "top_k": top_k,
+            "api_key": api_key or os.getenv("OPENAI_API_KEY"),
+            "persist_dir": persist_dir,
+            "collection_name": collection_name,
+            "reset_collection": reset_collection,
+            "hard_reset": hard_reset,
+            "use_llm": use_llm,
+            "prompt_template": prompt_template
+        }
         
-        # Get API key from environment or parameter
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        # Initialize with default settings
+        self.create_new_pipeline(use_llm=use_llm)
+
+    def _initialize_with_settings(self, settings: Dict[str, Any]) -> None:
+        """
+        Initialize components with given settings.
         
-        # 调试输出
-        if not self.api_key:
-            print("WARNING: API key not found in environment variables.")
-            # 尝试直接从.env文件读取
-            try:
-                with open(os.path.join(os.path.dirname(__file__), '.env'), 'r') as f:
-                    for line in f:
-                        if line.startswith('OPENAI_API_KEY'):
-                            self.api_key = line.split('=', 1)[1].strip().strip('"').strip("'")
-                            print("API key found in .env file directly.")
-                            break
-            except Exception as e:
-                print(f"Error reading .env file directly: {e}")
-            
+        Args:
+            settings: Dictionary containing initialization parameters
+        """
+        # Get API key from settings
+        self.api_key = settings["api_key"]
         if not self.api_key:
             raise ValueError("OpenAI API key not provided. Set it as an environment variable or pass it as a parameter.")
         
         # Create persist directory if it doesn't exist
         self.persist_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "chroma_db"))
         os.makedirs(self.persist_dir, exist_ok=True)
-        print(f"Using persistent storage at: {self.persist_dir}")
         
         # 处理集合名称和重置
-        self.collection_name = collection_name
+        self.collection_name = settings["collection_name"]
         
         # 如果需要硬重置，直接删除原有collection
-        if reset_collection and hard_reset:
-            print(f"Hard resetting collection: {collection_name}")
+        if settings["reset_collection"] and settings["hard_reset"]:
+            print(f"Hard resetting collection: {self.collection_name}")
             try:
-                success = CustomChromaDocumentStore.delete_collection(self.persist_dir, collection_name)
+                success = CustomChromaDocumentStore.delete_collection(self.persist_dir, self.collection_name)
                 if success:
-                    print(f"Successfully deleted collection: {collection_name}")
-                    # 同时删除元数据
-                    delete_collection_metadata(collection_name)
+                    print(f"Successfully deleted collection: {self.collection_name}")
+                    delete_collection_metadata(self.collection_name)
                 else:
-                    print(f"Collection {collection_name} not found or could not be deleted")
+                    print(f"Collection {self.collection_name} not found or could not be deleted")
             except Exception as e:
                 print(f"Error deleting collection: {e}")
         # 如果只是软重置，使用时间戳创建新集合
-        elif reset_collection:
-            # 使用时间戳作为集合名称后缀以确保唯一性
+        elif settings["reset_collection"]:
             import time
             timestamp = int(time.time())
-            self.collection_name = f"{collection_name}_{timestamp}"
+            self.collection_name = f"{self.collection_name}_{timestamp}"
             print(f"Soft reset: Using new collection with timestamp: {self.collection_name}")
         
-        # Initialize components with the determined collection name
-        print(f"Initializing document store with collection: {self.collection_name}")
-        self.text_embedder = SentenceTransformersTextEmbedder(model=embedding_model)
-        self.document_embedder = SentenceTransformersDocumentEmbedder(model=embedding_model)
-        
-        # 尝试初始化文档存储
+        # Initialize document store
         try:
-            # 初始化文档存储 - ChromaDocumentStore会自动检测collection是否存在
-            embedding_dim = 384  # 默认值
-            
-            # 检查是否有特定嵌入模型的维度设置
-            if "bge-large" in embedding_model:
-                embedding_dim = 1024
-            elif "bge" in embedding_model:
-                embedding_dim = 768
-            elif "m3e" in embedding_model:
-                embedding_dim = 768
-            elif "multilingual" in embedding_model and "L12" in embedding_model:
-                embedding_dim = 384
-            
+            # 不再手动指定嵌入维度，依赖模型的默认配置
             self.document_store = CustomChromaDocumentStore(
-                embedding_dim=embedding_dim,
                 persist_dir=self.persist_dir,
                 collection_name=self.collection_name
             )
             
-            print(f"Using persistent storage at: {self.persist_dir}")
-            print(f"Using collection: {self.collection_name}")
+            # 保存collection元数据
+            if settings["reset_collection"] or not get_embedding_model(self.collection_name):
+                save_collection_metadata(self.collection_name, settings["embedding_model"])
             
-            # 保存collection元数据（嵌入模型信息）
-            # 注意：只有在创建新collection或重置时才保存元数据
-            if reset_collection or not get_embedding_model(self.collection_name):
-                save_collection_metadata(self.collection_name, embedding_model)
-            
-            # 获取collection中的文档数量
-            try:
-                all_docs = self.document_store.filter_documents({})
-                print(f"Collection contains {len(all_docs)} documents")
-            except Exception as e:
-                print(f"Could not get document count: {e}")
-                
         except Exception as e:
             print(f"Error initializing document store: {e}")
             raise ValueError(f"Failed to initialize ChromaDocumentStore: {e}")
+
+        # 使用提示词模板
+        self.chat_template = get_template(settings["prompt_template"])
+        self.current_template = settings["prompt_template"]
         
-        # Warm up the embedders to load the models
-        print("Warming up embedding models...")
+        # Initialize components
+        self.text_embedder = SentenceTransformersTextEmbedder(model=settings["embedding_model"])
+        self.document_embedder = SentenceTransformersDocumentEmbedder(model=settings["embedding_model"])
+        self.retriever = ChromaEmbeddingRetriever(
+            document_store=self.document_store,
+            top_k=settings["top_k"]
+        )
+        self.prompt_builder = ChatPromptBuilder(template=self.chat_template)
+        self.generator = OpenAIChatGenerator(
+            model=settings["llm_model"],
+            api_key=Secret.from_token(self.api_key)
+        )
+        
+        # Warm up the embedders
         self.text_embedder.warm_up()
         self.document_embedder.warm_up()
-        
-        # Initialize chat prompt template and chat messages
-        self.chat_template = [
-            ChatMessage.from_user(
-                """
-        Answer the question based on the given context. If the answer cannot be derived from the context, 
-        say "Sorry, I don't know either =-=" Include only information that is 
-        present in the context and do not add any additional information.
 
-        Context:
-        {% for document in documents %}
-        {{ document.content }}
-        {% endfor %}
-
-        Question: {{question}}
-        Answer:
+    def _create_pipeline(self, use_llm: bool = True) -> Pipeline:
         """
-            )
-        ]
+        Create a new pipeline using the current components.
         
-        # Create components
-        try:
-            # Create retriever using the existing document store
-            self.retriever = ChromaEmbeddingRetriever(
-                document_store=self.document_store,
-                top_k=top_k
-            )
+        Args:
+            use_llm: Whether to include LLM in the pipeline (if False, only retriever will be used)
             
-            self.prompt_builder = ChatPromptBuilder(template=self.chat_template)
-            
-            self.generator = OpenAIChatGenerator(
-                model=llm_model,
-                api_key=Secret.from_token(self.api_key)
-            )
-            
-            # Initialize pipeline
-            self.pipeline = self._create_pipeline()
-        except Exception as e:
-            print(f"Error creating pipeline components: {e}")
-            raise ValueError(f"Failed to initialize RAG pipeline components: {e}")
-
-    def _create_pipeline(self) -> Pipeline:
-        """
-        Create and connect the RAG pipeline components.
-        
         Returns:
             Haystack Pipeline
         """
         try:
-            # 先确保检索器正确初始化
-            try:
-                # 检查检索器是否需要重新初始化
-                if not hasattr(self, 'retriever') or self.retriever is None:
-                    self.retriever = ChromaEmbeddingRetriever(
-                        document_store=self.document_store,
-                        top_k=self.top_k
-                    )
-            except Exception as retriever_error:
-                print(f"Error initializing retriever: {retriever_error}")
-                self.retriever = ChromaEmbeddingRetriever(
-                    document_store=self.document_store,
-                    top_k=self.top_k
-                )
-            
-            # Create pipeline
+            # Create and connect pipeline
             pipeline = Pipeline()
-            
-            # Add components
             pipeline.add_component("text_embedder", self.text_embedder)
             pipeline.add_component("retriever", self.retriever)
-            pipeline.add_component("prompt_builder", self.prompt_builder)
-            pipeline.add_component("llm", self.generator)
+
+            # 根据use_llm参数决定是否添加和连接LLM相关组件
+            if use_llm:
+                pipeline.add_component("prompt_builder", self.prompt_builder)
+                pipeline.connect("retriever", "prompt_builder.documents")
+                pipeline.add_component("llm", self.generator)
+                pipeline.connect("prompt_builder.prompt", "llm.messages")
             
-            # Connect components
+            # 这个连接在任何情况下都需要的
             pipeline.connect("text_embedder.embedding", "retriever.query_embedding")
-            pipeline.connect("retriever", "prompt_builder.documents")
-            pipeline.connect("prompt_builder.prompt", "llm.messages")
             
             return pipeline
+            
         except Exception as e:
             print(f"Error creating pipeline: {e}")
-            
-            # 尝试重新创建检索器和pipeline
+            raise ValueError(f"无法初始化RAG pipeline: {e}")
+
+    def create_new_pipeline(self, use_llm: bool = True, **kwargs) -> None:
+        """
+        Create a new pipeline with optional parameter overrides and set it as current.
+        
+        Args:
+            use_llm: Whether to include LLM in the pipeline
+            **kwargs: Optional parameters to override default settings
+        """
+        # Merge default settings with overrides
+        settings = self.default_settings.copy()
+        settings.update(kwargs)
+        
+        # Initialize components with new settings
+        self._initialize_with_settings(settings)
+        
+        # Create new pipeline
+        new_pipeline = self._create_pipeline(use_llm=use_llm)
+        
+        # If this is the first pipeline, set it as default
+        if not hasattr(self, 'default_pipeline'):
+            self.default_pipeline = new_pipeline
+        
+        # Set as current pipeline
+        self.current_pipeline = new_pipeline
+
+    def reset_to_default_pipeline(self) -> None:
+        """
+        Reset the current pipeline to the default one.
+        """
+        self.current_pipeline = self.default_pipeline
+
+    def run(self, query: str) -> Dict[str, Any]:
+        """
+        Run the current pipeline with a user query.
+        
+        Args:
+            query: User question
+        
+        Returns:
+            Pipeline results containing the generated answer
+        """
+        try:
+            results = self.current_pipeline.run({
+                "text_embedder": {"text": query},
+                "prompt_builder": {"question": query}
+            })
+            return results
+        except Exception as e:
             try:
-                print("重新创建pipeline和组件...")
-                
-                # 重新创建检索器
-                self.retriever = ChromaEmbeddingRetriever(
-                    document_store=self.document_store,
-                    top_k=self.top_k
-                )
-                
-                # 完全重新创建pipeline
-                pipeline = Pipeline()
-                pipeline.add_component("text_embedder", self.text_embedder)
-                pipeline.add_component("retriever", self.retriever)
-                pipeline.add_component("prompt_builder", self.prompt_builder)
-                pipeline.add_component("llm", self.generator)
-                
-                pipeline.connect("text_embedder.embedding", "retriever.query_embedding")
-                pipeline.connect("retriever", "prompt_builder.documents")
-                pipeline.connect("prompt_builder.prompt", "llm.messages")
-                
-                return pipeline
-            except Exception as retry_error:
-                print(f"Pipeline重建失败: {retry_error}")
-                raise ValueError(f"无法初始化RAG pipeline: {retry_error}")
+                results = self.current_pipeline.run({
+                    "text_embedder": {"text": query},
+                })
+                return results
+            except Exception as e:
+                raise ValueError(f"查询处理失败: {e}")
 
     def add_documents(self, documents: List[Document], check_duplicates: bool = False) -> None:
         """
@@ -353,30 +329,6 @@ class RAGPipeline:
         # ChromaDocumentStore with persist_path automatically persists data
         print("Documents are automatically persisted in ChromaDocumentStore")
 
-    def run(self, query: str) -> Dict[str, Any]:
-        """
-        Run the RAG pipeline with a user query.
-        
-        Args:
-            query: User question
-        
-        Returns:
-            Pipeline results containing the generated answer
-        """
-        try:
-            # 运行pipeline
-            results = self.pipeline.run({
-                "text_embedder": {"text": query},
-                "prompt_builder": {
-                    "question": query
-                    # 不再手动设置documents，因为它已经通过pipeline连接由retriever提供
-                }
-            })
-            return results
-        except Exception as e:
-            # 抛出异常
-            raise ValueError(f"查询处理失败: {e}")
-
     def get_answer(self, query: str) -> str:
         """
         Get an answer for a query using the RAG pipeline.
@@ -423,7 +375,7 @@ class RAGPipeline:
             "default": "Hello! I'm your AI assistant, ready to answer questions based on your documents."
         }
         
-        return introductions.get(self.llm_model, introductions["default"])
+        return introductions.get(self.default_settings["llm_model"], introductions["default"])
 
     def reset_document_store(self) -> None:
         """
@@ -443,3 +395,66 @@ class RAGPipeline:
         except Exception as e:
             print(f"Error resetting document store: {e}")
             print("To create a new collection, initialize a new RAGPipeline with reset_collection=True")
+
+    def get_current_template_info(self) -> Dict[str, Any]:
+        """
+        Get information about the current prompt template.
+        
+        Returns:
+            Dictionary with template name, description, and full template
+        """
+        templates = get_all_templates()
+        if hasattr(self, 'current_template') and self.current_template in templates:
+            return templates[self.current_template]
+        return templates["balanced"]  # 默认返回平衡模板
+
+    def set_prompt_template(self, template_name: str) -> bool:
+        """
+        Change the prompt template.
+        
+        Args:
+            template_name: Name of the template (precise, balanced, creative)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # 获取新模板
+            new_template = get_template(template_name)
+            
+            # 保存当前模板名称
+            self.current_template = template_name.lower()
+            if self.current_template not in get_all_templates():
+                self.current_template = "balanced"
+                
+            # 更新设置
+            self.default_settings["prompt_template"] = self.current_template
+            
+            # 创建新的prompt_builder组件
+            self.chat_template = new_template
+            self.prompt_builder = ChatPromptBuilder(template=self.chat_template)
+            
+            # 重新创建pipeline
+            self.create_new_pipeline(use_llm=self.default_settings["use_llm"])
+            
+            return True
+        except Exception as e:
+            print(f"Error setting prompt template: {e}")
+            return False
+    
+    def get_available_templates(self) -> Dict[str, Dict[str, str]]:
+        """
+        Get all available prompt templates.
+        
+        Returns:
+            Dictionary of template information
+        """
+        templates = get_all_templates()
+        # 构建简化的模板信息，不包含实际模板对象
+        return {
+            name: {
+                "name": info["name"],
+                "description": info["description"]
+            }
+            for name, info in templates.items()
+        }

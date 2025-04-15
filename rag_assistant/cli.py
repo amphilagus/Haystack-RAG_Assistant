@@ -148,6 +148,15 @@ def setup_arg_parser() -> argparse.ArgumentParser:
         help="When used with --reset-collection, completely deletes the existing collection instead of creating a new one with timestamp."
     )
     
+    # Prompt template
+    parser.add_argument(
+        "--prompt-template",
+        type=str,
+        default="balanced",
+        choices=["precise", "balanced", "creative"],
+        help="Prompt template to use: precise (strictly factual), balanced (default), creative (more explanatory)"
+    )
+    
     return parser
 
 def main():
@@ -184,7 +193,8 @@ def main():
             persist_dir=args.persist_dir,
             collection_name=args.collection,
             reset_collection=args.reset_collection,
-            hard_reset=args.hard_reset
+            hard_reset=args.hard_reset,
+            prompt_template=args.prompt_template
         )
         
         # Show model introduction

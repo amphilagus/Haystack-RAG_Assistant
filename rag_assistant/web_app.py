@@ -63,6 +63,8 @@ if "persist_dir" not in st.session_state:
     st.session_state.persist_dir = "chroma_db"
 if "current_model" not in st.session_state:
     st.session_state.current_model = "gpt-4o-mini"
+if "prompt_template" not in st.session_state:
+    st.session_state.prompt_template = "balanced"
 
 def get_collections(persist_dir: str) -> List[str]:
     """
@@ -113,7 +115,7 @@ def get_collection_info(persist_dir: str, collection_name: str) -> dict:
         st.warning(f"Unable to get collection info: {e}")
         return {"exists": False, "count": 0, "error": str(e)}
 
-def initialize_pipeline(api_key: str, llm_model: str, top_k: int, collection_name: str) -> bool:
+def initialize_pipeline(api_key: str, llm_model: str, top_k: int, collection_name: str, prompt_template: str = "balanced") -> bool:
     """
     Initialize the RAG pipeline.
     
@@ -122,6 +124,7 @@ def initialize_pipeline(api_key: str, llm_model: str, top_k: int, collection_nam
         llm_model: LLM model to use for answer generation
         top_k: Number of documents to retrieve
         collection_name: Name of the collection to use
+        prompt_template: Prompt template to use (precise, balanced, creative)
     """
     try:
         # 检查集合是否存在，获取正确的嵌入模型
@@ -134,6 +137,10 @@ def initialize_pipeline(api_key: str, llm_model: str, top_k: int, collection_nam
         
         # 检查模型是否更改
         model_changed = "current_model" in st.session_state and st.session_state.current_model != llm_model
+        template_changed = "prompt_template" in st.session_state and st.session_state.prompt_template != prompt_template
+        
+        # 保存当前模板
+        st.session_state.prompt_template = prompt_template
         
         st.session_state.rag_pipeline = RAGPipeline(
             embedding_model=embedding_model,
@@ -141,7 +148,8 @@ def initialize_pipeline(api_key: str, llm_model: str, top_k: int, collection_nam
             top_k=top_k,
             api_key=api_key,
             persist_dir=st.session_state.persist_dir,
-            collection_name=collection_name
+            collection_name=collection_name,
+            prompt_template=prompt_template
         )
         
         # 保存当前模型
@@ -149,12 +157,19 @@ def initialize_pipeline(api_key: str, llm_model: str, top_k: int, collection_nam
         
         # 获取模型介绍
         model_intro = st.session_state.rag_pipeline.get_model_introduction()
+        template_info = st.session_state.rag_pipeline.get_current_template_info()
         
-        # 根据模型是否更改显示不同消息
+        # 根据模型和模板是否更改显示不同消息
+        message = ""
         if model_changed:
-            st.session_state.model_message = f"Model switched to {llm_model}. {model_intro}"
+            message += f"Model switched to {llm_model}. "
+        if template_changed:
+            message += f"Template switched to {template_info['name']}. "
+        
+        if message:
+            st.session_state.model_message = message + model_intro
         else:
-            st.session_state.model_message = f"Pipeline initialized with {llm_model}. {model_intro}"
+            st.session_state.model_message = f"Pipeline initialized with {llm_model} and {template_info['name']} template. {model_intro}"
         
         return True
     except Exception as e:
@@ -212,114 +227,169 @@ def main():
             collection_name = st.text_input("Collection Name", value=default_collection)
             st.info(f"No existing collections found. Please initialize a collection first via CLI.")
         
-        # 模型选择
+        # 模型选择区域
         st.subheader("Model Settings")
-        llm_model = st.selectbox(
-            "LLM Model",
-            options=[
-                "gpt-4o-mini",
-                "gpt-3.5-turbo",
-                "gpt-4o",
-                "o1"
-            ],
-            index=0
+        
+        model_options = {
+            "gpt-4o-mini": "GPT-4o Mini (快速)",
+            "gpt-3.5-turbo": "GPT-3.5 Turbo (快速)",
+            "gpt-4o": "GPT-4o (高质量)"
+        }
+        
+        # 模型选择
+        default_model = "gpt-4o-mini"
+        selected_model = st.selectbox(
+            "Select LLM Model",
+            options=list(model_options.keys()),
+            format_func=lambda x: model_options.get(x, x),
+            index=list(model_options.keys()).index(default_model)
         )
         
-        # 检索文档数量设置
-        top_k = st.slider("Number of documents to retrieve", min_value=1, max_value=20, value=5)
+        # 添加提示词模板选择
+        st.subheader("Prompt Template")
+        template_options = {
+            "precise": "Precise (精准模式)",
+            "balanced": "Balanced (平衡模式)",
+            "creative": "Creative (创意模式)"
+        }
         
-        # 使用用户输入的API密钥或之前加载的密钥
-        used_api_key = input_api_key or api_key
+        template_descriptions = {
+            "precise": "严格遵循文档内容，提供简洁准确的回答",
+            "balanced": "平衡准确性和流畅性，默认模式",
+            "creative": "在保持准确的同时提供更详细的解释和见解"
+        }
+        
+        # 获取当前模板
+        current_template = st.session_state.get("prompt_template", "balanced")
+        
+        selected_template = st.selectbox(
+            "Select Prompt Template",
+            options=list(template_options.keys()),
+            format_func=lambda x: template_options.get(x, x),
+            index=list(template_options.keys()).index(current_template),
+            help="选择不同的提示词模板来控制AI回答的风格",
+            key="template_selector"
+        )
+        
+        # 显示所选模板的描述
+        st.caption(template_descriptions.get(selected_template, ""))
+        
+        # 如果已初始化pipeline且模板被更改，更新模板
+        if (st.session_state.rag_pipeline is not None and 
+            selected_template != current_template and 
+            "template_selector" in st.session_state):
+            with st.spinner(f"Updating template to {template_options[selected_template]}..."):
+                success = st.session_state.rag_pipeline.set_prompt_template(selected_template)
+                if success:
+                    st.session_state.prompt_template = selected_template
+                    st.success(f"Template changed to {template_options[selected_template]}")
+                    template_info = st.session_state.rag_pipeline.get_current_template_info()
+                    st.session_state.model_message = f"Template switched to {template_info['name']}. {template_info['description']}"
+                    st.rerun()
+                else:
+                    st.error("Failed to change template")
+        
+        # 检索参数设置
+        top_k = st.slider("Number of documents to retrieve (top_k)", min_value=1, max_value=20, value=5)
         
         # 初始化按钮
-        if st.button("Initialize Pipeline"):
-            if not used_api_key:
-                st.error("Please provide an OpenAI API key.")
+        if st.button("Initialize Pipeline", type="primary"):
+            # 检查是否选择了集合
+            if not collection_name:
+                st.error("Please select a collection first")
             else:
-                if initialize_pipeline(used_api_key, llm_model, top_k, collection_name):
-                    st.success(f"Pipeline initialized successfully with collection '{collection_name}'!")
-                    st.session_state.collection_name = collection_name
-    
-    # 主区域
-    if not st.session_state.rag_pipeline:
+                # 显示加载指示器
+                with st.spinner("Initializing pipeline..."):
+                    # 尝试初始化pipeline
+                    success = initialize_pipeline(
+                        api_key=input_api_key or api_key,
+                        llm_model=selected_model,
+                        top_k=top_k,
+                        collection_name=collection_name,
+                        prompt_template=selected_template
+                    )
+                    if success:
+                        st.success("Pipeline initialized successfully!")
+                    else:
+                        st.error("Failed to initialize pipeline. Check the error message above.")
+
+    # 右侧主区域
+    if st.session_state.rag_pipeline is not None:
+        # 显示模型信息
+        if "model_message" in st.session_state:
+            st.info(st.session_state.model_message)
+            
+        # 获取当前模板信息
+        template_info = st.session_state.rag_pipeline.get_current_template_info()
+        
+        # 显示聊天标题和当前使用的模板信息
+        st.subheader("Chat")
+        st.caption(f"Using template: {template_info['name']} - {template_info['description']}")
+        
+        # 根据模板设置头像
+        avatar_emojis = {
+            "precise": "🔍",  # 精确模式 - 放大镜
+            "balanced": "⚖️",  # 平衡模式 - 天平
+            "creative": "🎨"   # 创意模式 - 调色板
+        }
+        current_avatar_emoji = avatar_emojis.get(st.session_state.prompt_template, "⚖️")
+        
+        # 添加模板图标说明
+        st.caption("模板图标: 🔍精确模式 | ⚖️平衡模式 | 🎨创意模式")
+        
+        # 修复旧的历史记录，确保每条消息都有模板信息
+        for message in st.session_state.chat_history:
+            if message["role"] == "assistant" and "template" not in message:
+                message["template"] = "balanced"  # 为旧消息添加默认模板
+        
+        # 显示聊天历史
+        for message in st.session_state.chat_history:
+            if message["role"] == "user":
+                st.chat_message("user").write(message["content"])
+            else:
+                # 使用消息中保存的模板对应的头像
+                message_template = message.get("template", "balanced")
+                message_avatar = avatar_emojis.get(message_template, "⚖️")
+                st.chat_message("assistant", avatar=message_avatar).write(message["content"])
+                
+        # 用户输入
+        user_query = st.chat_input("Ask a question about your documents...")
+        
+        if user_query:
+            # 将用户问题添加到历史记录
+            st.session_state.chat_history.append({"role": "user", "content": user_query})
+            st.chat_message("user").write(user_query)
+            
+            # 生成回答
+            with st.chat_message("assistant", avatar=current_avatar_emoji):
+                with st.spinner("Generating answer..."):
+                    try:
+                        answer = st.session_state.rag_pipeline.get_answer(user_query)
+                        st.write(answer)
+                        
+                        # 添加回答到历史记录，包括当前使用的模板
+                        st.session_state.chat_history.append({
+                            "role": "assistant", 
+                            "content": answer,
+                            "template": st.session_state.prompt_template  # 保存当前使用的模板
+                        })
+                    except Exception as e:
+                        st.error(f"Error generating answer: {e}")
+    else:
         st.info("Please initialize the pipeline in the sidebar to get started.")
         
         # 添加一些使用指南
         with st.expander("Usage Guide", expanded=True):
             st.markdown("""
             ### Getting Started
-            1. **Initialize Pipeline**: Provide an OpenAI API key and select a Collection in the sidebar
-            2. **Ask Questions**: Use the chat interface below to query your knowledge base
+            1. **Initialize Pipeline**: Select a Collection, Model and Template in the sidebar
+            2. **Ask Questions**: Use the chat interface to query your knowledge base
             
-            ### About Collections
-            - Collections need to be created and loaded with documents using the CLI interface
-            - Different topics or projects should be stored in separate Collections
-            - Select the appropriate collection for your query context
+            ### About Templates
+            - **Precise**: Strictly follows document content with concise answers
+            - **Balanced**: Balances accuracy and fluency (default)
+            - **Creative**: Provides more detailed explanations while maintaining accuracy
             """)
-            
-    else:
-        # 显示模型介绍
-        if "model_message" in st.session_state:
-            st.success(st.session_state.model_message)
-            # 显示一次后清除消息
-            st.session_state.model_message = None
-        
-        # 显示当前集合状态
-        if "collection_name" in st.session_state:
-            collection_info = get_collection_info(st.session_state.persist_dir, st.session_state.collection_name)
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.info(f"📚 Collection: **{st.session_state.collection_name}**")
-            with col2:
-                if collection_info["exists"]:
-                    st.info(f"📊 Document Count: **{collection_info['count']}**")
-                else:
-                    st.warning("⚠️ Collection not initialized or does not exist")
-            with col3:
-                from datetime import datetime
-                st.info(f"🕒 Current Time: **{datetime.now().strftime('%Y-%m-%d %H:%M')}**")
-        
-        st.divider()
-        
-        # 聊天界面
-        st.subheader("Chat with Your Knowledge Base")
-        
-        # 显示聊天历史
-        for i, (query, answer) in enumerate(st.session_state.chat_history):
-            with st.chat_message("user"):
-                st.write(query)
-            with st.chat_message("assistant"):
-                st.write(answer)
-        
-        # 用户输入
-        user_query = st.chat_input("Ask a question about your documents...")
-        
-        if user_query:
-            with st.chat_message("user"):
-                st.write(user_query)
-            
-            with st.chat_message("assistant"):
-                with st.spinner("Generating answer..."):
-                    try:
-                        # 如果是第一个问题，显示模型介绍
-                        intro_text = ""
-                        if not st.session_state.chat_history:
-                            intro_text = f"_{st.session_state.rag_pipeline.get_model_introduction()}_\n\n"
-                            
-                        # 生成回答
-                        answer = st.session_state.rag_pipeline.get_answer(user_query)
-                        
-                        # 显示带有介绍的答案（如果需要）
-                        if intro_text:
-                            st.markdown(intro_text)
-                        st.write(answer)
-                        
-                        # 将问题和回答存储在历史记录中
-                        st.session_state.chat_history.append((user_query, answer))
-                    except Exception as e:
-                        st.error(f"Error generating answer: {e}")
-                        import traceback
-                        st.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main() 

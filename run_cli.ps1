@@ -141,6 +141,21 @@ try {
         default { Write-Host "Selected GPT-4o Mini (default)" -ForegroundColor Green }
     }
     
+    # 选择提示词模板
+    Write-Host "`nSelect prompt template to use:" -ForegroundColor Yellow
+    Write-Host "  1) Balanced (default) - Balance accuracy and fluency" -ForegroundColor Cyan
+    Write-Host "  2) Precise - Strictly follow document content with concise answers" -ForegroundColor Cyan
+    Write-Host "  3) Creative - Provide detailed explanations while maintaining accuracy" -ForegroundColor Cyan
+
+    $templateChoice = Read-Host "Enter your choice (1-3)"
+    $promptTemplate = "balanced"
+
+    switch ($templateChoice) {
+        "2" { $promptTemplate = "precise"; Write-Host "Selected Precise template" -ForegroundColor Green }
+        "3" { $promptTemplate = "creative"; Write-Host "Selected Creative template" -ForegroundColor Green }
+        default { Write-Host "Selected Balanced template (default)" -ForegroundColor Green }
+    }
+    
     # 选择嵌入模型，但只在以下情况才提示选择：
     # 1. collection不存在
     # 2. collection存在但要重置
@@ -194,7 +209,8 @@ try {
                 "--add-docs", $docPath,
                 "--collection", $collection,
                 "--llm-model", $modelName,
-                "--embedding-model", $embeddingModel
+                "--embedding-model", $embeddingModel,
+                "--prompt-template", $promptTemplate
             )
             if ($resetCollection) { $args += "--reset-collection" }
             if ($hardReset) { $args += "--hard-reset" }
@@ -210,7 +226,8 @@ try {
             "--interface", "cli",
             "--collection", $collection,
             "--llm-model", $modelName,
-            "--embedding-model", $embeddingModel
+            "--embedding-model", $embeddingModel,
+            "--prompt-template", $promptTemplate
         )
         if ($resetCollection) { $args += "--reset-collection" }
         if ($hardReset) { $args += "--hard-reset" }

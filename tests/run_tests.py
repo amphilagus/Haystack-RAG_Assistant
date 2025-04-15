@@ -40,12 +40,14 @@ def main():
         elif test_type == "existing_collections":
             args.append(str(script_dir / "test_rag_pipeline.py::test_load_existing_collection"))
             args.append(str(script_dir / "test_rag_pipeline.py::test_add_to_existing_collection"))
+        elif test_type == "embedding_retrieval":
+            args.append(str(script_dir / "test_embedding_retrieval.py"))
         elif test_type == "all":
             # Run all tests
             pass
         else:
             print(f"Unknown test type: {test_type}")
-            print("Available test types: document_loader, rag_pipeline, duplicate, integration, list_collections, existing_collections, all")
+            print("Available test types: document_loader, rag_pipeline, duplicate, integration, list_collections, existing_collections, embedding_retrieval, all")
             return 1
         
         # Add any additional pytest arguments passed from command line

@@ -102,6 +102,8 @@ haystack-rag/
 ├── collection_metadata.json  # 集合元数据（自动创建）
 ├── requirements.txt     # 项目依赖
 ├── run_cli.ps1          # Windows PowerShell启动脚本
+├── run_web.ps1          # Web界面启动脚本
+├── convert_pdf.ps1      # PDF转MD脚本
 └── .env                 # 环境变量（需手动创建）
 ```
 
@@ -112,12 +114,70 @@ haystack-rag/
 - 大型文档集合的嵌入过程可能需要一些时间
 - 确保OpenAI API密钥有足够的额度
 
+## PDF转换工具
+
+项目内置了PDF到Markdown的转换工具，基于[Marker](https://github.com/VikParuchuri/marker)库，支持OCR功能。
+
+### 主要功能
+
+- 将PDF文档转换为格式化的Markdown文本
+- 支持多语言OCR识别扫描文档
+- 可自定义批处理大小以优化不同硬件的性能
+- 支持限制处理特定页面范围
+- 支持批量处理整个文件夹中的PDF文件
+- 支持并行处理多个PDF文件提高效率
+- **LLM增强**：使用语言模型提高转换质量（需要在.env文件中配置Google API密钥）
+
+### 使用方法
+
+```bash
+# 处理单个PDF文件
+python rag_assistant/pdf_to_markdown.py "文档路径.pdf" "输出目录" [选项]
+
+# 批量处理整个目录中的PDF文件
+python rag_assistant/pdf_to_markdown.py "PDF文件夹路径" "输出目录" --workers 4 [选项]
+
+# 使用LLM增强功能转换
+python rag_assistant/pdf_to_markdown.py "文档路径.pdf" "输出目录" --use_llm
+```
+
+#### 通用选项
+- `--batch_multiplier <值>`: 批处理大小倍数(默认: 2)，增加可提高速度但需要更多VRAM
+- `--langs "<语言>"`: OCR识别的语言，逗号分隔(例如 "en,zh,fr")
+- `--use_llm`: 使用语言模型增强，提高转换质量（需要Google API密钥）
+
+#### 单文件选项
+- `--max_pages <值>`: 最大处理页数，缺省则处理整个文档
+
+#### 批量处理选项
+- `--workers <值>`: 并行处理的PDF文件数(默认: 1)
+- `--max_files <值>`: 最多处理的PDF文件数，缺省则处理所有文件
+- `--min_length <值>`: 最小文本长度，低于此长度的PDF将被跳过(默认: 0)
+
+### PowerShell脚本使用方法
+
+Windows用户可以使用更便捷的PowerShell脚本：
+
+```powershell
+# 基本用法
+.\convert_pdf.ps1 -InputPath "文档.pdf" -OutputDir "输出目录"
+
+# 使用LLM增强
+.\convert_pdf.ps1 -InputPath "文档.pdf" -OutputDir "输出目录" -UseLLM
+
+# 批量处理目录
+.\convert_pdf.ps1 -InputPath "PDF文件夹" -OutputDir "输出目录" -Workers 4 -UseLLM
+```
+
+### 性能提示
+
+1. 如果有大容量显存的GPU(8GB+)，可增加`batch_multiplier`值加速处理
+2. 使用OCR时，正确指定文档中实际包含的语言可提高准确性
+3. 多核心CPU或多GPU系统上建议增加`workers`值实现并行处理
+4. 对于主要包含图像的PDF，设置`min_length`参数可避免不必要的OCR处理
+5. 对于非常大的文档，考虑使用`max_pages`参数分批处理
+6. LLM增强功能可以显著提高转换质量，但会增加处理时间和API消耗
+
 ## 许可证
 
 MIT 
-
-## 最近更新
-
-- **递归目录扫描**: 现在文档加载器会递归扫描所有子目录，方便组织大型文档集合
-- **新增格式支持**: 增加对DOCX文档格式的支持
-- **改进日志输出**: 文档加载过程中显示更详细的目录和文件信息 

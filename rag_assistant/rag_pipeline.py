@@ -86,6 +86,13 @@ class RAGPipeline:
             use_llm: Whether to include LLM in the pipeline
             prompt_template: Prompt template to use (precise, balanced, creative)
         """
+        # 检查集合是否存在及其嵌入模型
+        if not reset_collection:
+            existing_model = get_embedding_model(collection_name)
+            if existing_model:
+                print(f"集合 '{collection_name}' 已存在，将使用原有嵌入模型: {existing_model}")
+                embedding_model = existing_model
+            
         # Save parameters as default settings
         self.default_settings = {
             "embedding_model": embedding_model,
@@ -121,6 +128,15 @@ class RAGPipeline:
         
         # 处理集合名称和重置
         self.collection_name = settings["collection_name"]
+        
+        # 检查集合是否存在，如果存在且不重置，强制使用原有嵌入模型
+        original_embedding_model = settings["embedding_model"]
+        if not settings["reset_collection"]:
+            existing_model = get_embedding_model(self.collection_name)
+            if existing_model and existing_model != original_embedding_model:
+                print(f"警告: 正在使用与集合 '{self.collection_name}' 关联的嵌入模型: {existing_model}")
+                print(f"(而不是提供的模型: {original_embedding_model})")
+                settings["embedding_model"] = existing_model
         
         # 如果需要硬重置，直接删除原有collection
         if settings["reset_collection"] and settings["hard_reset"]:

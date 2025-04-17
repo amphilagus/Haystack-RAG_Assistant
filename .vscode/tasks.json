@@ -1,0 +1,100 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "测试环境变量加载",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/rag_assistant/debug.py",
+                "env"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "测试文档加载",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/rag_assistant/debug.py",
+                "loader"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "测试RAG流水线(使用环境变量)",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/rag_assistant/debug.py",
+                "pipeline"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "测试RAG流水线(使用硬编码密钥)",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/rag_assistant/debug.py",
+                "pipeline",
+                "hardcoded"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "启动RAG CLI界面",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/rag_assistant/main.py",
+                "--interface",
+                "cli",
+                "--add-docs",
+                "${workspaceFolder}/rag_assistant/data"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "启动RAG Web界面",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/rag_assistant/main.py",
+                "--interface",
+                "web"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        }
+    ]
+} 

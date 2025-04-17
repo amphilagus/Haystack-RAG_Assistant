@@ -19,6 +19,7 @@
 
 - Python 3.8+
 - 有效的OpenAI API密钥
+- [uv](https://github.com/astral-sh/uv) 包管理器 (可选但推荐)
 
 ### 安装步骤
 
@@ -29,19 +30,32 @@ git clone https://github.com/yourusername/haystack-rag.git
 cd haystack-rag
 ```
 
-2. 创建并激活虚拟环境：
+2. 使用uv创建并激活虚拟环境：
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\Activate.ps1  # Windows PowerShell
+# 安装uv (如果尚未安装)
+# Linux/Mac
+curl -fsSL https://astral.sh/uv/install.sh | bash
+# Windows
+curl -fsSL https://astral.sh/uv/install.ps1 -o install.ps1; .\install.ps1
+
+# 创建并激活虚拟环境
+uv init .
+uv venv
+# Linux/Mac
+source .venv/bin/activate
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
 ```
 
-3. 安装依赖：
+3. 使用uv安装依赖：
 
 ```bash
-pip install -r requirements.txt
+# 安装项目依赖
+uv pip install -r requirements.txt
+
+# 安装mcp和httpx
+uv add mcp[cli] httpx
 ```
 
 4. 配置API密钥：

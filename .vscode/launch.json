@@ -1,0 +1,231 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "RAG CLI",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/rag_assistant/main.py",
+            "args": [
+                "--interface", "cli",
+                "--collection", "default",
+                "--llm-model", "gpt-4o-mini"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "RAG CLI with Documents",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/rag_assistant/main.py",
+            "args": [
+                "--interface", "cli",
+                "--add-docs", "${workspaceFolder}/raw_data",
+                "--collection", "default",
+                "--llm-model", "gpt-4o-mini"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "RAG CLI (GPT-3.5 Turbo)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/rag_assistant/main.py",
+            "args": [
+                "--interface", "cli",
+                "--collection", "default",
+                "--llm-model", "gpt-3.5-turbo"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "RAG CLI (GPT-4o)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/rag_assistant/main.py",
+            "args": [
+                "--interface", "cli",
+                "--collection", "default",
+                "--llm-model", "gpt-4o"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "RAG Web",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/rag_assistant/main.py",
+            "args": [
+                "--interface", "web"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Test - Document Loader",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["document_loader", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - RAG Pipeline",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["rag_pipeline", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - Duplicate Detection",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["duplicate", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - Integration Tests",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["integration", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - All Tests",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["all", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - Clean Up",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/cleanup.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - List Collections",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["list_collections", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - Existing Collections",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["existing_collections", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - Embedding Retrieval",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["embedding_retrieval", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Test - Embedding Retrieval (Slow)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["embedding_retrieval", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "RUN_SLOW_TESTS": "1"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "PyTest - Current File",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "${file}",
+                "-v",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+} 

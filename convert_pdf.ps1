@@ -127,10 +127,10 @@ try {
 }
 
 # Set path to the Python script
-$scriptPath = Join-Path (Get-Location) "rag_assistant\pdf_to_markdown.py"
+$scriptPath = Join-Path (Get-Location) "rag_assistant\utils\pdf_converter\pdf_to_markdown.py"
 if (-not (Test-Path $scriptPath)) {
     # Try the script in the current directory
-    $scriptPath = "pdf_to_markdown.py"
+    $scriptPath = "rag_assistant\utils\pdf_converter\pdf_to_markdown.py"
     if (-not (Test-Path $scriptPath)) {
         Write-Error "Could not find pdf_to_markdown.py script"
         exit 1

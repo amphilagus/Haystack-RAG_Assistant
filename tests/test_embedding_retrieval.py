@@ -126,4 +126,43 @@ def test_comprehensive_retrieval(rag_pipeline, query, top_k):
     assert len(documents) > 0, "至少应检索到一个文档"
     
     print(f"\n查询: {query}, top_k: {top_k}")
-    print(f"检索到 {len(documents)} 个文档") 
+    print(f"检索到 {len(documents)} 个文档")
+
+def test_set_top_k(rag_pipeline):
+    """测试直接设置top_k参数的功能"""
+    # 选择一个查询用于测试
+    query = LIUCIXIN_QUERIES[0]
+    
+    # 初始化一个较小的top_k
+    initial_top_k = 2
+    rag_pipeline.create_new_pipeline(top_k=initial_top_k, use_llm=False)
+    
+    # 执行初始检索并验证结果
+    initial_results = rag_pipeline.run(query)
+    initial_documents = initial_results["retriever"]["documents"]
+    assert len(initial_documents) <= initial_top_k, f"检索到的文档数量({len(initial_documents)})不应超过top_k({initial_top_k})"
+    
+    # 直接设置一个较大的top_k
+    new_top_k = 5
+    rag_pipeline.set_top_k(new_top_k)
+    
+    # 不重新创建管道，直接执行检索
+    new_results = rag_pipeline.run(query)
+    new_documents = new_results["retriever"]["documents"]
+    
+    # 验证结果数量符合新的top_k
+    assert len(new_documents) <= new_top_k, f"检索到的文档数量({len(new_documents)})不应超过新的top_k({new_top_k})"
+    assert len(new_documents) > initial_top_k, f"检索到的文档数量({len(new_documents)})应该超过初始top_k({initial_top_k})"
+    
+    # 确认默认设置也已更新
+    assert rag_pipeline.default_settings["top_k"] == new_top_k, "默认设置中的top_k应该已更新"
+    
+    # 测试设置无效的top_k值
+    with pytest.raises(ValueError):
+        rag_pipeline.set_top_k(-1)
+    
+    with pytest.raises(ValueError):
+        rag_pipeline.set_top_k(0)
+    
+    with pytest.raises(ValueError):
+        rag_pipeline.set_top_k("invalid") 

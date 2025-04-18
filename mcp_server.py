@@ -1,9 +1,11 @@
 from mcp.server.fastmcp import FastMCP
 import os
 import sys
-import logging
 import locale
-from logging.handlers import RotatingFileHandler
+from typing import Dict, List, Optional, Any
+
+from rag_assistant.logger import get_logger
+logger = get_logger("mcp_server")
 
 # Set environment variables for proper encoding
 os.environ['PYTHONIOENCODING'] = 'utf-8'
@@ -44,21 +46,6 @@ except (locale.Error, AttributeError):
     except (locale.Error, AttributeError):
         pass  # If locale setting fails, continue anyway
 
-# Configure logging
-log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, 'rag_server.log')
-
-# Set up logger
-logger = logging.getLogger('rag_assistant')
-logger.setLevel(logging.INFO)
-
-# Set up rotating file handler (10MB max size, keep 5 backup files)
-handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
 # Log encoding information
 logger.info("RAG Assistant server starting...")
 logger.info(f"Python version: {sys.version}")
@@ -79,8 +66,8 @@ class RAGPipelineWrapper:
         self.pipeline = None  # 初始化管道为空
         self.initialized = False  # 初始化状态为未初始化
         self.collections_metadata = {}  # 初始化集合元数据为空字典
+        self.current_pipeline = None  # 初始化当前管道名称
         self._load_collections_metadata()  # 加载集合元数据
-        self._collections_titles_cache = {}  # 缓存每个集合的所有标题
         logger.info(f"已加载 {len(self.collections_metadata)} 个集合的元数据")
     
     def _load_collections_metadata(self):
@@ -92,10 +79,14 @@ class RAGPipelineWrapper:
 
     def initialize(self, collection_name, embedding_model="BAAI/bge-small-zh-v1.5", use_llm=False, top_k=5,**kwargs):
         """为特定集合初始化RAG管道"""
-        pipeline_name = f"{collection_name}_usellm_topk{top_k}" if use_llm else f"{collection_name}_topk{top_k}"
-        if self.initialized and hasattr(self, 'current_pipeline') and self.current_pipeline == collection_name:
-            logger.debug(f"已经为集合 '{collection_name}' 初始化了管道，重用现有实例")
-            return True  # 如果已经为该集合初始化，直接返回成功
+        # 不再以top_k作为管道命名的一部分，因为现在可以动态设置top_k
+        pipeline_name = f"{collection_name}_usellm" if use_llm else f"{collection_name}"
+        if self.initialized and hasattr(self, 'current_pipeline') and self.current_pipeline == pipeline_name:
+            # 如果已经为该集合初始化了管道，检查是否需要更新top_k
+            if hasattr(self.pipeline, 'set_top_k'):
+                logger.debug(f"重用已有管道并设置top_k={top_k}")
+                self.pipeline.set_top_k(top_k)
+            return True
             
         try:
             logger.info(f"正在为集合 '{collection_name}' 初始化RAG管道...")
@@ -116,11 +107,12 @@ class RAGPipelineWrapper:
                 embedding_model=embedding_model,  # 嵌入模型
                 persist_dir=chroma_path,  # 持久化目录
                 use_llm=use_llm,
+                top_k=top_k,  # 初始top_k值
                 **kwargs  # 其他参数
             )
             
             self.initialized = True  # 设置初始化状态为成功
-            self.current_pipeline = pipeline_name  # 记录当前集合名称
+            self.current_pipeline = pipeline_name  # 记录当前管道名称
             logger.info(f"集合 '{collection_name}' 的RAG管道初始化成功")
             return True  # 返回初始化成功
             
@@ -140,14 +132,10 @@ class RAGPipelineWrapper:
             }
             
         try:
-            # 查询嵌入
-            # Query the embeddings
-            results = self.pipeline.run(
-                query=query_text  # 查询文本
-            )
+            # 查询嵌入，不再需要重新创建管道，直接运行
+            results = self.pipeline.run(query=query_text)
             
             # 格式化结果
-            # Format the results
             documents = []
             if "retriever" in results and "documents" in results["retriever"]:
                 for doc in results["retriever"]["documents"]:  # 遍历文档
@@ -183,94 +171,13 @@ class RAGPipelineWrapper:
             }
             
         try:
-            # 确保集合的标题列表已缓存
-            if collection_name not in self._collections_titles_cache:
-                _ = self.verify_collection(collection_name, show_title_list=True)
-            
-            actual_title = title
-            closest_title = None
-            
-            # 确保标题使用UTF-8编码，防止GBK编码错误
-            try:
-                # 尝试规范化标题文本，消除特殊字符可能造成的编码问题
-                import unicodedata
-                normalized_title = unicodedata.normalize('NFKD', title)
-                logger.debug(f"Original title: '{title}', Normalized title: '{normalized_title}'")
-                
-                # 如果标题包含非ASCII字符，记录日志
-                if not all(ord(c) < 128 for c in title):
-                    logger.info(f"Title contains non-ASCII characters: '{title}'")
-            except Exception as e:
-                logger.warning(f"Error normalizing title: {e}")
-                # 继续使用原始标题
-            
-            # 使用管道方法进行查询
-            try:
-                # 先尝试精确匹配
-                logger.debug(f"Attempting exact title match for: '{actual_title}'")
-                results = self.pipeline.run_with_selected_title(
-                    query=query_text,  # 查询文本
-                    title=actual_title  # 文档标题
-                )
-                
-                # 如果结果为空且软匹配模式开启，尝试软匹配
-                if (not results.get("retriever", {}).get("documents", []) and soft_match and 
-                        collection_name in self._collections_titles_cache):
-                    closest_title = self._find_closest_title(collection_name, title)
-                    if closest_title and closest_title != title:
-                        actual_title = closest_title
-                        logger.info(f"Using closest title match: '{actual_title}'")
-                        # 使用最相似的标题重新查询
-                        results = self.pipeline.run_with_selected_title(
-                            query=query_text,
-                            title=actual_title,
-                        )
-                    else:
-                        logger.warning(f"No close title match found for '{title}'")
-            except Exception as e:
-                # 记录详细的错误信息以便调试
-                error_msg = f"Error in exact title match: {str(e)}"
-                logger.error(error_msg)
-                
-                # 如果精确匹配失败并且启用了软匹配，尝试软匹配
-                if soft_match:
-                    try:
-                        closest_title = self._find_closest_title(collection_name, title)
-                        if closest_title:
-                            actual_title = closest_title
-                            logger.info(f"After error, using closest title: '{actual_title}'")
-                            # 使用最相似的标题查询
-                            results = self.pipeline.run_with_selected_title(
-                                query=query_text,
-                                title=actual_title
-                            )
-                        else:
-                            # 返回错误信息，而不是抛出异常
-                            return {
-                                "error": f"No matching title found for '{title}' in collection '{collection_name}'",
-                                "documents": [],
-                                "query": query_text,
-                                "collection_name": collection_name,
-                                "filtered_by_title": title
-                            }
-                    except Exception as soft_match_e:
-                        logger.error(f"Error during soft matching: {soft_match_e}")
-                        return {
-                            "error": f"Error in title matching: {str(e)}, then during soft matching: {str(soft_match_e)}",
-                            "documents": [],
-                            "query": query_text,
-                            "collection_name": collection_name,
-                            "filtered_by_title": title
-                        }
-                else:
-                    # 返回错误信息，而不是抛出异常
-                    return {
-                        "error": f"Error querying with title '{title}': {str(e)}",
-                        "documents": [],
-                        "query": query_text,
-                        "collection_name": collection_name,
-                        "filtered_by_title": title
-                    }
+            # 直接使用pipeline中的run_with_selected_title方法，该方法已整合了软匹配功能
+            results = self.pipeline.run_with_selected_title(
+                query=query_text,          # 查询文本
+                title=title,               # 文档标题
+                soft_match=soft_match,     # 是否启用软匹配
+                similarity_threshold=0.01  # 相似度阈值
+            )
             
             # 格式化结果
             documents = []
@@ -286,12 +193,18 @@ class RAGPipelineWrapper:
                     except Exception as doc_e:
                         # 如果处理单个文档时出错，记录错误但继续处理其他文档
                         logger.error(f"Error processing document: {doc_e}")
-                
+            
+            # 获取实际使用的标题和软匹配信息
+            actual_title = results.get("actual_title", title)
+            soft_match_used = results.get("soft_match_used", False)
+            
             return {
-                "documents": documents,  # 文档列表
-                "query": query_text,  # 查询文本
-                "actual_title": actual_title,
-                "closest_title": closest_title if closest_title else actual_title,
+                "documents": documents,                # 文档列表
+                "query": query_text,                   # 查询文本
+                "collection_name": collection_name,    # 集合名称
+                "filtered_by_title": title,            # 请求的标题
+                "actual_title": actual_title,          # 实际使用的标题
+                "soft_match_used": soft_match_used     # 是否使用了软匹配
             }
             
         except Exception as e:
@@ -358,78 +271,171 @@ class RAGPipelineWrapper:
         if not show_title_list:
             return True  # 集合存在，且不需要标题列表
 
-        # 检查是否已缓存该集合的标题列表
-        if collection_name in self._collections_titles_cache:
-            return list(self._collections_titles_cache[collection_name])
-
-        # 需要获取标题列表
         try:
-            # 尝试为该集合初始化（或复用已初始化的）管道
-            if not self.initialize(collection_name):
+            # 先尝试从title_matcher中获取缓存的标题
+            from rag_assistant.title_matcher import title_matcher
+            if title_matcher.has_cached_titles(collection_name):
+                logger.debug(f"从title_matcher获取集合 '{collection_name}' 的缓存标题")
+                return title_matcher.get_cached_titles(collection_name)
+
+            # 尝试为该集合初始化（或复用已初始化的）管道，使用默认的top_k值
+            if not self.initialize(collection_name, top_k=5):
                 logger.warning(f"Failed to initialize pipeline for collection '{collection_name}' to get titles.")
                 return [] # 初始化失败，返回空列表表示错误
 
-            # 获取所有文档
-            all_docs = self.pipeline.document_store.filter_documents({})
+            # 使用_cache_all_titles方法缓存并获取所有标题
+            unique_titles = self.pipeline._cache_all_titles(collection_name)
             
-            # 提取唯一的标题
-            titles = set()
-            for doc in all_docs:
-                if doc.meta and "title" in doc.meta and doc.meta["title"] is not None:
-                    titles.add(doc.meta["title"])
-            
-            # 将标题列表缓存起来
-            self._collections_titles_cache[collection_name] = titles
-            
-            return list(titles) # 返回标题列表
+            return list(unique_titles) # 返回标题列表
             
         except Exception as e:
             logger.error(f"Error verifying collection or getting titles for '{collection_name}': {e}")
             return [] # 其他获取文档或处理过程中的错误
 
-    def _find_closest_title(self, collection_name, title):
+    def batch_query(self, queries: List[Dict], collection_name: str):
         """
-        在集合中找到与给定标题最相似的标题
+        批量执行多个查询，每个查询可以有不同的参数和运行模式。
 
         Args:
+            queries: 查询配置列表
             collection_name: 集合名称
-            title: 要匹配的标题
 
         Returns:
-            最相似的标题，如果没有找到则返回None
+            查询结果列表，结构与run_batch方法返回相同
         """
-        # 如果集合标题未缓存，先获取
-        if collection_name not in self._collections_titles_cache:
-            titles = self.verify_collection(collection_name, show_title_list=True)
-            if not titles:  # 如果无法获取标题列表，返回None
-                return None
-        else:
-            titles = self._collections_titles_cache[collection_name]
-        
-        if not titles:
-            return None
+        if not self.initialize(collection_name=collection_name):  # 如果初始化失败
+            # 返回错误信息
+            return {
+                "error": f"Failed to initialize RAG pipeline for {collection_name}",
+                "results": []
+            }
             
-        # 计算最相似的标题
         try:
-            import difflib
-            
-            # 使用difflib中的SequenceMatcher计算相似度
-            def similarity(a, b):
-                return difflib.SequenceMatcher(None, a, b).ratio()
-            
-            # 计算所有标题与目标标题的相似度
-            similarities = [(t, similarity(t.lower(), title.lower())) for t in titles]
-            
-            # 按相似度排序并返回最相似的
-            closest = max(similarities, key=lambda x: x[1])
-            
-            logger.info(f"未找到精确匹配标题 '{title}'，使用最相似的标题: '{closest[0]}' (相似度: {closest[1]:.2f})")
-            
-            return closest[0]
+            # 使用pipeline的run_batch方法执行批量查询
+            results = self.pipeline.run_batch(queries)
+            return {
+                "results": results,
+                "collection_name": collection_name,
+                "query_count": len(results)
+            }
             
         except Exception as e:
-            logger.error(f"Error finding closest title: {e}")
-            return None
+            logger.error(f"批量查询处理失败: {str(e)}", exc_info=True)
+            return {
+                "error": f"Error processing batch query: {str(e)}",
+                "results": [],
+                "collection_name": collection_name
+            }
+            
+    def extract_research_paper_content(self, collection_name: str, title: str, soft_match: bool = True):
+        """
+        一次性提取科研文献的多个关键内容板块（背景、目标、方法、结果、亮点和发布时间线）。
+        
+        Args:
+            collection_name: 集合名称
+            title: 论文标题
+            soft_match: 是否使用软匹配查找最相似的标题
+            
+        Returns:
+            包含各个科研内容板块查询结果的字典
+        """
+        if not self.initialize(collection_name=collection_name):
+            return {
+                "error": f"Failed to initialize RAG pipeline for {collection_name}",
+                "aspects": {},
+                "title": title,
+                "collection_name": collection_name
+            }
+            
+        try:
+            # 定义要查询的各个方面及其参数
+            queries = [
+                {
+                    "query": "background of this study",
+                    "mode": "run_with_selected_title",
+                    "title": title,
+                    "top_k": 12
+                },
+                {
+                    "query": "objective of this study",
+                    "mode": "run_with_selected_title",
+                    "title": title,
+                    "top_k": 5
+                },
+                {
+                    "query": "methods of this study",
+                    "mode": "run_with_selected_title",
+                    "title": title,
+                    "top_k": 8
+                },
+                {
+                    "query": "results of this study",
+                    "mode": "run_with_selected_title",
+                    "title": title,
+                    "top_k": 20
+                },
+                {
+                    "query": "highlights of this study",
+                    "mode": "run_with_selected_title",
+                    "title": title,
+                    "top_k": 10
+                },
+                {
+                    "query": "publication timeline of this study",
+                    "mode": "run_with_selected_title",
+                    "title": title,
+                    "top_k": 5
+                },
+            ]
+            
+            # 用于每个查询记录软匹配状态
+            for query in queries:
+                query["soft_match"] = soft_match
+                query["similarity_threshold"] = 0
+                
+            # 执行批量查询
+            batch_results = self.batch_query(queries, collection_name, )
+            
+            if "error" in batch_results:
+                return {
+                    "error": batch_results["error"],
+                    "aspects": {},
+                    "title": title,
+                    "collection_name": collection_name
+                }
+                
+            # 重新组织结果，以方面名称为键
+            aspects = {}
+            actual_title = None
+            
+            for i, result in enumerate(batch_results.get("results", [])):
+                aspect_name = queries[i]["query"].replace(" of this study", "").lower()
+                
+                # 收集实际使用的标题信息（所有查询都应使用相同的实际标题）
+                if actual_title is None and "actual_title" in result:
+                    actual_title = result["actual_title"]
+                    
+                aspects[aspect_name] = {
+                    "documents": result["retriever"].get("documents", []),
+                    "query": queries[i]["query"]
+                }
+                
+            return {
+                "aspects": aspects,
+                "title": title,
+                "actual_title": actual_title or title,
+                "collection_name": collection_name,
+                "soft_match_used": any(r.get("soft_match_used", False) for r in batch_results.get("results", []))
+            }
+            
+        except Exception as e:
+            logger.error(f"提取科研文献内容失败: {str(e)}", exc_info=True)
+            return {
+                "error": f"Error extracting research paper content: {str(e)}",
+                "aspects": {},
+                "title": title,
+                "collection_name": collection_name
+            }
 
 # 全局RAG管道包装器实例
 rag_wrapper = RAGPipelineWrapper()
@@ -441,10 +447,10 @@ def list_collections():
     return rag_wrapper.get_collections()
 
 # 查询
-@mcp.tool()
-def query_embeddings(query:str, collection_name:str, top_k:int):
-    """执行嵌入查询并返回结果"""
-    return rag_wrapper.query_embeddings(query, collection_name, top_k)
+# @mcp.tool()
+# def query_embeddings(query:str, collection_name:str, top_k:int):
+#     """执行嵌入查询并返回结果"""
+#     return rag_wrapper.query_embeddings(query, collection_name, top_k)
 
 # 按标题过滤查询    
 @mcp.tool()
@@ -452,11 +458,23 @@ def query_by_title(query:str, collection_name:str, title:str, top_k:int=5, soft_
     """按文档标题过滤执行查询，支持软匹配最相似标题"""
     return rag_wrapper.query_by_title(query, collection_name, title, top_k, soft_match)
 
+# 批量查询
+@mcp.tool()
+def batch_query(queries:List[Dict], collection_name:str):
+    """批量执行多个查询，每个查询可以有不同的参数和运行模式"""
+    return rag_wrapper.batch_query(queries, collection_name)
+
 # 验证集合并获取标题    
 @mcp.tool()
 def verify_collection(collection_name: str, show_title_list: bool = False):
     """验证集合是否存在，可选返回标题列表"""
     return rag_wrapper.verify_collection(collection_name, show_title_list)
+
+# 提取科研文献多个内容板块
+@mcp.tool()
+def extract_research_paper_content(collection_name: str, title: str, soft_match: bool = True):
+    """一次性提取科研文献的多个关键内容板块（背景、目标、方法、结果、亮点和时间线）"""
+    return rag_wrapper.extract_research_paper_content(collection_name, title, soft_match)
     
 if __name__ == "__main__":
     # Pre-initialize collections for faster first requests

@@ -384,11 +384,8 @@ def test_title_filtered_retrieval():
     """
     Test that retrieval can be filtered by document title.
     
-    This test creates two documents with different titles, adds them to the pipeline,
-    and then verifies that:
-    1. Querying with a specific title that exists returns results
-    2. Querying with a title that doesn't exist returns no results
-    3. Querying without a title filter returns different results than with a title filter
+    This test creates documents with different titles, adds them to the pipeline,
+    and then verifies title filtering functionality with various test cases.
     """
     # Use a unique collection name for this test
     import time
@@ -401,14 +398,14 @@ def test_title_filtered_retrieval():
         use_llm=False
     )
     
-    # Create two test documents with different titles
+    # Create test documents with different titles
     doc1 = Document(
         content="Python is a high-level programming language known for its readability and simplicity. " 
                 "It's widely used for web development, data analysis, artificial intelligence, and automation.",
         meta={
             "source": "test_title_filter_doc1",
             "file_type": "txt",
-            "title": "programming_languages"
+            "title": "Programming Languages"
         }
     )
     
@@ -419,57 +416,262 @@ def test_title_filtered_retrieval():
         meta={
             "source": "test_title_filter_doc2", 
             "file_type": "txt",
-            "title": "machine_learning"
+            "title": "Machine Learning"
+        }
+    )
+    
+    doc3 = Document(
+        content="Natural Language Processing (NLP) is a field of artificial intelligence " 
+                "that focuses on the interaction between computers and human language. " 
+                "It involves enabling computers to understand, interpret, and generate human language.",
+        meta={
+            "source": "test_title_filter_doc3", 
+            "file_type": "txt",
+            "title": "Natural Language Processing"
         }
     )
     
     # Add documents to pipeline
-    pipeline.add_documents([doc1, doc2])
+    pipeline.add_documents([doc1, doc2, doc3])
     
-    # Query that could match both documents
+    # Query that could match all documents
     query = "Tell me about artificial intelligence"
     
-    # 1. Test retrieval with existing title filter
-    results_title1 = pipeline.run_with_selected_title(query, "programming_languages")
-    assert results_title1 is not None
-    assert "retriever" in results_title1
-    assert "documents" in results_title1["retriever"]
-    assert len(results_title1["retriever"]["documents"]) > 0
-    assert "programming_languages" == results_title1["retriever"]["documents"][0].meta["title"]
+    # 测试结果容器 - 用于保存所有测试结果供后续打印
+    results = {}
     
-    # 2. Test retrieval with non-existent title filter
-    results_title_nonexistent = pipeline.run_with_selected_title(query, "nonexistent_title")
-    assert results_title_nonexistent is not None
-    assert "retriever" in results_title_nonexistent
-    assert "documents" in results_title_nonexistent["retriever"]
-    assert len(results_title_nonexistent["retriever"]["documents"]) == 0
+    print("\n开始标题过滤检索测试:")
     
-    # 3. Test unfiltered retrieval (should be different from title-filtered)
-    results_unfiltered = pipeline.run(query)
-    assert results_unfiltered is not None
-    assert "retriever" in results_unfiltered
-    assert "documents" in results_unfiltered["retriever"]
+    def test_exact_match():
+        """测试1: 精确标题匹配 (禁用软匹配)"""
+        print("  运行测试1: 精确标题匹配...")
+        
+        # 运行查询
+        results["title1"] = pipeline.run_with_selected_title(
+            query=query,
+            title="Programming Languages",
+            soft_match=False  # 显式禁用软匹配
+        )
+        
+        # 断言结果
+        assert results["title1"] is not None, "结果不应为None"
+        assert "retriever" in results["title1"], "结果中应包含retriever字段"
+        assert "documents" in results["title1"]["retriever"], "retriever中应包含documents字段"
+        assert len(results["title1"]["retriever"]["documents"]) > 0, "应返回至少一个文档"
+        assert results["title1"]["retriever"]["documents"][0].meta["title"] == "Programming Languages", \
+            f"文档标题应为'Programming Languages'，实际为{results['title1']['retriever']['documents'][0].meta.get('title', 'None')}"
+        assert results["title1"].get("soft_match_used", False) is False, "不应使用软匹配"
+        
+        print("  测试1通过: 成功找到精确匹配的文档")
     
-    # Check if unfiltered returns both documents or at least different ones than when filtered
-    unfiltered_titles = set(doc.meta["title"] for doc in results_unfiltered["retriever"]["documents"])
-    assert len(unfiltered_titles) > 0
+    def test_nonexistent_title():
+        """测试2: 不存在的标题 (禁用软匹配)"""
+        print("  运行测试2: 不存在的标题...")
+        
+        # 运行查询
+        results["nonexistent"] = pipeline.run_with_selected_title(
+            query=query, 
+            title="nonexistent_title",
+            soft_match=False  # 显式禁用软匹配
+        )
+        
+        # 断言结果
+        assert results["nonexistent"] is not None, "结果不应为None"
+        assert "retriever" in results["nonexistent"], "结果中应包含retriever字段"
+        assert "documents" in results["nonexistent"]["retriever"], "retriever中应包含documents字段"
+        assert len(results["nonexistent"]["retriever"]["documents"]) == 0, \
+            f"应返回0个文档，实际返回{len(results['nonexistent']['retriever']['documents'])}个"
+        
+        print("  测试2通过: 不存在的标题正确返回空结果")
     
-    # Verify that unfiltered results are different from title-filtered results
-    filtered_docs = [doc.content for doc in results_title1["retriever"]["documents"]]
-    unfiltered_docs = [doc.content for doc in results_unfiltered["retriever"]["documents"]]
+    def test_unfiltered_vs_filtered():
+        """测试3: 未过滤与过滤比较"""
+        print("  运行测试3: 未过滤与过滤比较...")
+        
+        # 运行未过滤查询
+        results["unfiltered"] = pipeline.run(query)
+        
+        # 断言结果
+        assert results["unfiltered"] is not None, "未过滤结果不应为None"
+        assert "retriever" in results["unfiltered"], "未过滤结果中应包含retriever字段"
+        assert "documents" in results["unfiltered"]["retriever"], "retriever中应包含documents字段"
+        
+        # 检查未过滤结果返回多个文档
+        unfiltered_titles = set(doc.meta["title"] for doc in results["unfiltered"]["retriever"]["documents"])
+        assert len(unfiltered_titles) > 0, f"未过滤查询应返回文档，实际为{len(unfiltered_titles)}"
+        
+        # 比较未过滤和过滤结果
+        filtered_docs = [doc.content for doc in results["title1"]["retriever"]["documents"]]
+        unfiltered_docs = [doc.content for doc in results["unfiltered"]["retriever"]["documents"]]
+        
+        # 未过滤和过滤结果应该在内容或数量上不同
+        assert filtered_docs != unfiltered_docs or len(filtered_docs) != len(unfiltered_docs), \
+            "未过滤和过滤结果应该不同"
+        
+        print("  测试3通过: 未过滤与过滤结果正确区分")
     
-    # The unfiltered and filtered results should be different in content or count
-    assert filtered_docs != unfiltered_docs or len(filtered_docs) != len(unfiltered_docs)
+    def test_different_titles():
+        """测试4: 不同标题比较"""
+        print("  运行测试4: 不同标题比较...")
+        
+        # 运行查询
+        results["title2"] = pipeline.run_with_selected_title(
+            query=query, 
+            title="Machine Learning",
+            soft_match=False  # 显式禁用软匹配
+        )
+        
+        # 断言结果
+        assert results["title2"] is not None, "结果不应为None"
+        assert "retriever" in results["title2"], "结果中应包含retriever字段"
+        assert "documents" in results["title2"]["retriever"], "retriever中应包含documents字段"
+        assert len(results["title2"]["retriever"]["documents"]) > 0, "应返回至少一个文档"
+        
+        # 比较不同标题过滤结果
+        filtered_docs1 = [doc.content for doc in results["title1"]["retriever"]["documents"]]
+        filtered_docs2 = [doc.content for doc in results["title2"]["retriever"]["documents"]]
+        
+        # 不同标题过滤应给出不同结果
+        assert filtered_docs1 != filtered_docs2 or len(filtered_docs1) != len(filtered_docs2), \
+            "不同标题过滤应给出不同结果"
+        
+        print("  测试4通过: 不同标题过滤返回不同结果")
     
-    # Optional: Compare with retrieval using the second title
-    results_title2 = pipeline.run_with_selected_title(query, "machine_learning")
-    filtered_docs2 = [doc.content for doc in results_title2["retriever"]["documents"]]
+    def test_soft_match_typo():
+        """测试5: 带拼写错误的软匹配"""
+        print("  运行测试5: 带拼写错误的软匹配...")
+        
+        # 运行查询
+        results["soft_match1"] = pipeline.run_with_selected_title(
+            query=query, 
+            title="Programing Languges",  # 故意拼写错误
+            soft_match=True,              # 显式启用软匹配
+            similarity_threshold=0.5
+        )
+        
+        # 断言结果
+        assert results["soft_match1"] is not None, "结果不应为None"
+        assert "retriever" in results["soft_match1"], "结果中应包含retriever字段"
+        assert "documents" in results["soft_match1"]["retriever"], "retriever中应包含documents字段"
+        assert len(results["soft_match1"]["retriever"]["documents"]) > 0, \
+            f"应返回至少一个文档，实际返回{len(results['soft_match1']['retriever']['documents'])}个"
+        assert results["soft_match1"]["retriever"]["documents"][0].meta["title"] == "Programming Languages", \
+            f"文档标题应为'Programming Languages'，实际为{results['soft_match1']['retriever']['documents'][0].meta.get('title', 'None')}"
+        assert results["soft_match1"].get("soft_match_used", False) is True, "应使用软匹配"
+        assert results["soft_match1"].get("actual_title") == "Programming Languages", \
+            f"实际标题应为'Programming Languages'，实际为{results['soft_match1'].get('actual_title', 'None')}"
+        
+        print("  测试5通过: 成功使用软匹配找到带拼写错误的标题")
     
-    # Verify that different title filters give different results
-    assert filtered_docs != filtered_docs2 or len(filtered_docs) != len(filtered_docs2)
+    def test_soft_match_partial():
+        """测试6: 部分标题软匹配"""
+        print("  运行测试6: 部分标题软匹配...")
+        
+        # 运行查询
+        results["soft_match2"] = pipeline.run_with_selected_title(
+            query=query, 
+            title="Machine",  # 部分标题
+            soft_match=True,  # 显式启用软匹配
+            similarity_threshold=0.5
+        )
+        
+        # 断言结果
+        assert results["soft_match2"] is not None, "结果不应为None"
+        assert "retriever" in results["soft_match2"], "结果中应包含retriever字段"
+        assert "documents" in results["soft_match2"]["retriever"], "retriever中应包含documents字段"
+        assert len(results["soft_match2"]["retriever"]["documents"]) > 0, \
+            f"应返回至少一个文档，实际返回{len(results['soft_match2']['retriever']['documents'])}个"
+        assert results["soft_match2"]["retriever"]["documents"][0].meta["title"] == "Machine Learning", \
+            f"文档标题应为'Machine Learning'，实际为{results['soft_match2']['retriever']['documents'][0].meta.get('title', 'None')}"
+        
+        print("  测试6通过: 成功使用软匹配找到部分标题匹配")
     
-    print("\nTest completed successfully:")
-    print(f"- Programming languages document filtered results: {len(results_title1['retriever']['documents'])}")
-    print(f"- Machine learning document filtered results: {len(results_title2['retriever']['documents'])}")
-    print(f"- Non-existent title filtered results: {len(results_title_nonexistent['retriever']['documents'])}")
-    print(f"- Unfiltered results: {len(results_unfiltered['retriever']['documents'])}") 
+    def test_no_soft_match():
+        """测试7: 禁用软匹配"""
+        print("  运行测试7: 禁用软匹配...")
+        
+        # 运行查询
+        results["no_soft_match"] = pipeline.run_with_selected_title(
+            query=query, 
+            title="Programing Languges",  # 故意拼写错误
+            soft_match=False  # 显式禁用软匹配
+        )
+        
+        # 断言结果
+        assert results["no_soft_match"] is not None, "结果不应为None"
+        assert "retriever" in results["no_soft_match"], "结果中应包含retriever字段"
+        assert "documents" in results["no_soft_match"]["retriever"], "retriever中应包含documents字段"
+        assert len(results["no_soft_match"]["retriever"]["documents"]) == 0, \
+            f"应返回0个文档，实际返回{len(results['no_soft_match']['retriever']['documents'])}个"
+        
+        print("  测试7通过: 禁用软匹配时，拼写错误的标题正确返回空结果")
+    
+    def test_high_threshold():
+        """测试8: 高相似度阈值"""
+        print("  运行测试8: 高相似度阈值...")
+        
+        # 运行查询
+        results["high_threshold"] = pipeline.run_with_selected_title(
+            query=query, 
+            title="Nature Language",  # 相似但不够接近
+            soft_match=True,          # 显式启用软匹配
+            similarity_threshold=0.9  # 很高的阈值
+        )
+        
+        # 断言结果
+        assert results["high_threshold"] is not None, "结果不应为None"
+        assert "retriever" in results["high_threshold"], "结果中应包含retriever字段"
+        assert "documents" in results["high_threshold"]["retriever"], "retriever中应包含documents字段"
+        assert len(results["high_threshold"]["retriever"]["documents"]) == 0, \
+            f"应返回0个文档，实际返回{len(results['high_threshold']['retriever']['documents'])}个"
+        
+        print("  测试8通过: 高相似度阈值正确防止了不够相似的匹配")
+    
+    def test_default_behavior():
+        """测试9: 默认软匹配行为"""
+        print("  运行测试9: 默认软匹配行为...")
+        
+        # 运行查询
+        results["default_soft_match"] = pipeline.run_with_selected_title(
+            query=query,
+            title="Programing Languges"  # 故意拼写错误，不指定soft_match参数
+        )
+        
+        # 断言结果
+        assert results["default_soft_match"] is not None, "结果不应为None"
+        assert "retriever" in results["default_soft_match"], "结果中应包含retriever字段"
+        assert "documents" in results["default_soft_match"]["retriever"], "retriever中应包含documents字段"
+        assert len(results["default_soft_match"]["retriever"]["documents"]) > 0, \
+            f"应返回至少一个文档，实际返回{len(results['default_soft_match']['retriever']['documents'])}个"
+        assert results["default_soft_match"]["retriever"]["documents"][0].meta["title"] == "Programming Languages", \
+            f"文档标题应为'Programming Languages'，实际为{results['default_soft_match']['retriever']['documents'][0].meta.get('title', 'None')}"
+        assert results["default_soft_match"].get("soft_match_used", False) is True, "默认应使用软匹配"
+        
+        print("  测试9通过: 默认行为正确使用软匹配")
+    
+    # 按顺序运行所有子测试
+    try:
+        test_exact_match()
+        test_nonexistent_title()
+        test_unfiltered_vs_filtered()
+        test_different_titles()
+        test_soft_match_typo()
+        test_soft_match_partial()
+        test_no_soft_match()
+        test_high_threshold()
+        test_default_behavior()
+    except AssertionError as e:
+        print(f"\n测试失败: {e}")
+        raise
+    
+    # 打印所有测试结果的汇总
+    print("\n测试结果汇总:")
+    print(f"- 精确标题匹配文档数量: {len(results['title1']['retriever']['documents'])}")
+    print(f"- 不同标题匹配文档数量: {len(results['title2']['retriever']['documents'])}")
+    print(f"- 不存在标题返回文档数量: {len(results['nonexistent']['retriever']['documents'])}")
+    print(f"- 未过滤查询返回文档数量: {len(results['unfiltered']['retriever']['documents'])}")
+    print(f"- 拼写错误软匹配文档数量: {len(results['soft_match1']['retriever']['documents'])}")
+    print(f"- 部分标题软匹配文档数量: {len(results['soft_match2']['retriever']['documents'])}")
+    print(f"- 禁用软匹配文档数量 (应为0): {len(results['no_soft_match']['retriever']['documents'])}")
+    print(f"- 高阈值软匹配文档数量 (应为0): {len(results['high_threshold']['retriever']['documents'])}")
+    print(f"- 默认行为软匹配文档数量: {len(results['default_soft_match']['retriever']['documents'])}") 

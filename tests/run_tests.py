@@ -44,12 +44,14 @@ def main():
             args.append(str(script_dir / "test_embedding_retrieval.py"))
         elif test_type == "title_filter":
             args.append(str(script_dir / "test_rag_pipeline.py::test_title_filtered_retrieval"))
+        elif test_type == "batch_query":
+            args.append(str(script_dir / "test_batch_query.py"))
         elif test_type == "all":
             # Run all tests
             pass
         else:
             print(f"Unknown test type: {test_type}")
-            print("Available test types: document_loader, rag_pipeline, duplicate, integration, list_collections, existing_collections, embedding_retrieval, title_filter, all")
+            print("Available test types: document_loader, rag_pipeline, duplicate, integration, list_collections, existing_collections, embedding_retrieval, title_filter, batch_query, all")
             return 1
         
         # Add any additional pytest arguments passed from command line

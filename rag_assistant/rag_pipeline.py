@@ -13,7 +13,7 @@ The pipeline consists of:
 
 import os
 import sys
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from dotenv import load_dotenv
 from haystack import Pipeline, Document
 from haystack_integrations.document_stores.chroma import ChromaDocumentStore
@@ -25,6 +25,16 @@ from tqdm import tqdm
 from haystack.components.builders import ChatPromptBuilder
 from haystack.components.generators.chat import OpenAIChatGenerator
 from haystack.dataclasses import ChatMessage
+import copy
+import json
+import pickle
+from collections import defaultdict
+import numpy as np
+import pandas as pd
+from haystack.components.retrievers import InMemoryEmbeddingRetriever
+from haystack.document_stores.in_memory import InMemoryDocumentStore
+from haystack.utils import Secret
+
 
 # 导入自定义的CustomChromaDocumentStore
 # 先确保当前目录在sys.path中
@@ -37,17 +47,23 @@ try:
     from .custom_document_store import CustomChromaDocumentStore
     from .collection_metadata import save_collection_metadata, get_embedding_model, delete_collection_metadata
     from .prompt_templates import get_template, get_all_templates
+    from .logger import get_logger
 except (ImportError, ValueError):
     # 如果失败，尝试绝对路径导入
     try:
         from rag_assistant.custom_document_store import CustomChromaDocumentStore
         from rag_assistant.collection_metadata import save_collection_metadata, get_embedding_model, delete_collection_metadata
         from rag_assistant.prompt_templates import get_template, get_all_templates
+        from rag_assistant.logger import get_logger
     except ImportError:
         # 最后尝试直接导入
         from custom_document_store import CustomChromaDocumentStore
         from collection_metadata import save_collection_metadata, get_embedding_model, delete_collection_metadata
         from prompt_templates import get_template, get_all_templates
+        from logger import get_logger
+
+# 获取日志记录器
+logger = get_logger("pipeline")
 
 # 直接在脚本开头加载环境变量
 load_dotenv(override=True)
@@ -300,42 +316,118 @@ class RAGPipeline:
             except Exception as e:
                 raise ValueError(f"查询处理失败: {e}")
 
-    def run_with_selected_title(self, query: str, title: str):
+    def _cache_all_titles(self, collection_name: str = None) -> Set[str]:
+        """
+        预先缓存指定集合中的所有文档标题到title_matcher中。
+        
+        Args:
+            collection_name: 集合名称，如果为None则使用当前集合名称
+            
+        Returns:
+            集合中的唯一标题集合
+        """
+        from rag_assistant.title_matcher import title_matcher
+        
+        # 如果未指定集合名称，使用当前集合名称
+        if collection_name is None:
+            collection_name = self.collection_name
+            
+        # 如果title_matcher已经缓存了该集合的标题，直接返回
+        if title_matcher.has_cached_titles(collection_name):
+            logger.debug(f"集合 '{collection_name}' 的标题已经被缓存")
+            return set(title_matcher.get_cached_titles(collection_name))
+            
+        # 从文档存储中获取所有文档
+        logger.info(f"正在缓存集合 '{collection_name}' 的所有标题...")
+        all_docs = self.document_store.filter_documents({})
+        
+        # 提取所有唯一标题
+        unique_titles = set()
+        for doc in all_docs:
+            if doc.meta and "title" in doc.meta and doc.meta["title"] is not None:
+                unique_titles.add(doc.meta["title"])
+                
+        # 如果找到标题，添加到缓存
+        if unique_titles:
+            title_matcher.add_titles_to_cache(collection_name, list(unique_titles))
+            logger.info(f"成功缓存集合 '{collection_name}' 的 {len(unique_titles)} 个唯一标题")
+        else:
+            logger.warning(f"集合 '{collection_name}' 中没有找到任何标题")
+            
+        return unique_titles
+
+    def run_with_selected_title(self, query: str, title: str, soft_match: bool = True, similarity_threshold: float = 0.5):
         """
         通过创建临时管道实现按标题过滤检索。
         
         Args:
             query: 用户问题
             title: 要过滤的文档标题
+            soft_match: 是否启用软匹配
+            similarity_threshold: 软匹配的相似度阈值
+            
+        Returns:
+            查询结果，如果没有找到匹配的文档，返回空结果
         """
         try:
+            # 导入标题匹配器
+            from rag_assistant.title_matcher import title_matcher
+            import time
+            
+            # 预先缓存所有标题，提高后续查找效率
+            self._cache_all_titles()
+            
+            # 规范化标题
+            normalized_title = title_matcher.normalize_title(title)
+            actual_title = normalized_title
+            
+            # 先尝试精确匹配
             # 获取指定title的文档，优先使用缓存
-            if title in self._title_doc_store_cache:
+            if hasattr(self, '_title_doc_store_cache') and title in self._title_doc_store_cache:
                 filtered_docs = self._title_doc_store_cache[title]["docs"]
-                print(f"使用缓存的文档，标题 '{title}' 包含 {len(filtered_docs)} 个文档")
+                logger.info(f"使用缓存的文档，标题 '{title}' 包含 {len(filtered_docs)} 个文档")
                 # 更新最后使用时间
-                import time
                 self._title_doc_store_cache[title]["last_used"] = time.time()
             else:
                 # 从主文档存储中获取所有文档
                 all_docs = self.document_store.filter_documents({})
                 
                 # 过滤出指定title的文档
-                filtered_docs = [doc for doc in all_docs if doc.meta and doc.meta.get("title") == title]
+                filtered_docs = [doc for doc in all_docs if doc.meta and doc.meta.get("title") == actual_title]
                 
+                # 如果没有找到精确匹配且启用了软匹配，尝试找最相似的标题
+                if not filtered_docs and soft_match:
+                    logger.info(f"未找到标题为 '{title}' 的文档，尝试软匹配")
+                    
+                    # 查找最相似的标题 - 我们已经预缓存了所有标题，所以不需要再重新获取
+                    closest_title = title_matcher.find_closest_title(
+                        self.collection_name, 
+                        title,
+                        similarity_threshold=similarity_threshold
+                    )
+                    
+                    if closest_title:
+                        logger.info(f"使用软匹配找到的标题: '{closest_title}'")
+                        actual_title = closest_title
+                        # 使用找到的标题过滤文档
+                        filtered_docs = [doc for doc in all_docs if doc.meta and doc.meta.get("title") == actual_title]
+                
+                # 如果仍然没有找到匹配的文档，返回空结果
                 if not filtered_docs:
-                    # 如果没有找到匹配的文档，返回空结果
-                    return {"retriever": {"documents": []}}
+                    logger.warning(f"找不到标题为 '{title}' 的文档，也没有找到足够相似的标题")
+                    return {"retriever": {"documents": []}, "soft_match_used": False, "actual_title": None}
                 
                 # 将过滤后的文档添加到缓存
-                import time
-                self._title_doc_store_cache[title] = {
+                if not hasattr(self, '_title_doc_store_cache'):
+                    self._title_doc_store_cache = {}
+                    
+                self._title_doc_store_cache[actual_title] = {
                     "docs": filtered_docs,
                     "docs_count": len(filtered_docs),
                     "last_used": time.time()
                 }
                 
-                print(f"创建标题为 '{title}' 的文档缓存，包含 {len(filtered_docs)} 个文档")
+                logger.info(f"创建标题为 '{actual_title}' 的文档缓存，包含 {len(filtered_docs)} 个文档")
             
             # 为这个查询创建全新的临时文档存储和检索器
             from haystack.document_stores.in_memory import InMemoryDocumentStore
@@ -363,20 +455,26 @@ class RAGPipeline:
             # 运行查询
             try:
                 results = self.run(query)
+                # 添加软匹配信息到结果
+                soft_match_used = actual_title != title
+                results["soft_match_used"] = soft_match_used
+                results["actual_title"] = actual_title
+                results["query_title"] = title
             finally:
                 # 恢复原始管道
                 self.current_pipeline = current_pipeline_backup
             
             # 管理缓存大小，当缓存项超过10个时，删除最旧的项
-            if len(self._title_doc_store_cache) > 10:
+            if hasattr(self, '_title_doc_store_cache') and len(self._title_doc_store_cache) > 10:
                 oldest_title = min(self._title_doc_store_cache.keys(), 
                                   key=lambda k: self._title_doc_store_cache[k]["last_used"])
-                print(f"缓存管理：删除最旧的文档缓存 '{oldest_title}'")
+                logger.debug(f"缓存管理：删除最旧的文档缓存 '{oldest_title}'")
                 del self._title_doc_store_cache[oldest_title]
             
             return results
         except Exception as e:
-            raise ValueError(f"查询处理失败: {e}")
+            logger.error(f"标题过滤查询处理失败: {str(e)}", exc_info=True)
+            raise ValueError(f"标题过滤查询处理失败: {str(e)}")
 
     def add_documents(self, documents: List[Document], check_duplicates: bool = False) -> None:
         """
@@ -570,3 +668,140 @@ class RAGPipeline:
             }
             for name, info in templates.items()
         }
+        
+    def set_top_k(self, top_k: int) -> None:
+        """
+        直接设置检索器的top_k参数，而不需要重新创建检索器或管道。
+        
+        Args:
+            top_k: 检索时返回的文档数量
+        """
+        if not isinstance(top_k, int) or top_k <= 0:
+            raise ValueError(f"top_k必须是正整数，而不是{top_k}")
+            
+        # 更新默认设置
+        self.default_settings["top_k"] = top_k
+        
+        # 更新检索器的top_k参数（如果检索器支持直接设置）
+        if hasattr(self.retriever, "top_k"):
+            self.retriever.top_k = top_k
+            logger.info(f"已直接设置检索器的top_k参数为{top_k}")
+        else:
+            # 如果检索器不支持直接设置，记录警告
+            logger.warning(f"当前检索器类型 {type(self.retriever).__name__} 不支持直接设置top_k参数，只更新了默认设置")
+            
+    def run_batch(self, queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        批量处理多个查询，每个查询可以有不同的参数和运行模式。
+        
+        Args:
+            queries: 查询配置列表，每个查询是一个字典，包含以下字段:
+                - query: 查询文本（必须）
+                - mode: 查询模式，可以是 'run' 或 'run_with_selected_title'（必须）
+                - top_k: 检索的文档数量（可选，默认使用当前设置）
+                - title: 当mode为'run_with_selected_title'时的标题（可选）
+                - soft_match: 当mode为'run_with_selected_title'时是否启用软匹配（可选，默认True）
+                - similarity_threshold: 软匹配的相似度阈值（可选，默认0.5）
+                - 其他可能由各种mode需要的参数
+        
+        Returns:
+            查询结果列表，每个结果是一个字典，包含查询结果和相关元数据
+        
+        Examples:
+            queries = [
+                {
+                    "query": "什么是向量检索?", 
+                    "mode": "run", 
+                    "top_k": 3
+                },
+                {
+                    "query": "GPT-4的特点是什么?", 
+                    "mode": "run_with_selected_title", 
+                    "title": "GPT模型介绍", 
+                    "top_k": 5,
+                    "soft_match": True
+                }
+            ]
+            results = pipeline.run_batch(queries)
+        """
+        if not queries:
+            return []
+            
+        results = []
+        original_top_k = self.default_settings["top_k"]  # 保存原始top_k
+        
+        try:
+            for query_config in queries:
+                # 验证查询配置
+                if not isinstance(query_config, dict):
+                    logger.warning(f"跳过非字典查询配置: {query_config}")
+                    continue
+                    
+                if "query" not in query_config:
+                    logger.warning(f"跳过缺少查询文本的配置: {query_config}")
+                    continue
+                    
+                if "mode" not in query_config:
+                    logger.warning(f"跳过缺少运行模式的配置: {query_config}")
+                    continue
+                
+                query_text = query_config["query"]
+                mode = query_config["mode"]
+                
+                # 提取并设置top_k（如果提供）
+                if "top_k" in query_config and query_config["top_k"] != self.default_settings["top_k"]:
+                    try:
+                        top_k = int(query_config["top_k"])
+                        if top_k > 0:
+                            self.set_top_k(top_k)
+                        else:
+                            logger.warning(f"忽略无效的top_k值: {top_k}")
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"设置top_k时出错: {e}")
+                
+                # 根据模式执行查询
+                try:
+                    if mode == "run":
+                        # 普通查询模式
+                        result = self.run(query_text)
+                        
+                    elif mode == "run_with_selected_title":
+                        # 按标题过滤的查询模式
+                        if "title" not in query_config:
+                            logger.warning(f"缺少title参数，无法执行run_with_selected_title: {query_config}")
+                            continue
+                            
+                        title = query_config["title"]
+                        soft_match = query_config.get("soft_match", True)
+                        similarity_threshold = query_config.get("similarity_threshold", 0.5)
+                        
+                        result = self.run_with_selected_title(
+                            query=query_text,
+                            title=title,
+                            soft_match=soft_match,
+                            similarity_threshold=similarity_threshold
+                        )
+                        
+                    else:
+                        logger.warning(f"未知的查询模式: {mode}")
+                        continue
+                        
+                    # 添加查询配置信息到结果中
+                    result["query_config"] = query_config
+                    results.append(result)
+                    
+                except Exception as e:
+                    logger.error(f"执行查询时出错: {e}", exc_info=True)
+                    # 添加错误信息到结果
+                    error_result = {
+                        "error": str(e),
+                        "query_config": query_config
+                    }
+                    results.append(error_result)
+                    
+        finally:
+            # 恢复原始top_k
+            if self.default_settings["top_k"] != original_top_k:
+                self.set_top_k(original_top_k)
+                
+        return results

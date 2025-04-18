@@ -224,6 +224,19 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "Test - Batch Query",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/run_tests.py",
+            "args": ["batch_query", "-s"],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "PyTest - Current File",
             "type": "python",
             "request": "launch",

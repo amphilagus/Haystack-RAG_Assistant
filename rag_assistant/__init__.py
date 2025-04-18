@@ -1,7 +1,9 @@
 """
-RAG Assistant Package
+RAG Assistant Module
 
-This package provides a local knowledge base AI assistant using Retrieval-Augmented Generation (RAG).
+基于Haystack的RAG (Retrieval-Augmented Generation) 系统，
+提供了文档加载、嵌入、检索和生成功能。
 """
 
+# 版本
 __version__ = "0.1.0" 

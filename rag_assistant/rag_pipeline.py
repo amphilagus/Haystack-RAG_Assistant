@@ -86,6 +86,9 @@ class RAGPipeline:
             use_llm: Whether to include LLM in the pipeline
             prompt_template: Prompt template to use (precise, balanced, creative)
         """
+        # 初始化临时文档存储缓存
+        self._title_doc_store_cache = {}
+        
         # 检查集合是否存在及其嵌入模型
         if not reset_collection:
             existing_model = get_embedding_model(collection_name)
@@ -110,12 +113,13 @@ class RAGPipeline:
         # Initialize with default settings
         self.create_new_pipeline(use_llm=use_llm)
 
-    def _initialize_with_settings(self, settings: Dict[str, Any]) -> None:
+    def _initialize_with_settings(self, settings: Dict[str, Any], custom_retriever=None) -> None:
         """
         Initialize components with given settings.
         
         Args:
             settings: Dictionary containing initialization parameters
+            custom_retriever: Optional custom retriever to use instead of creating a new one
         """
         # Get API key from settings
         self.api_key = settings["api_key"]
@@ -138,40 +142,42 @@ class RAGPipeline:
                 print(f"(而不是提供的模型: {original_embedding_model})")
                 settings["embedding_model"] = existing_model
         
-        # 如果需要硬重置，直接删除原有collection
-        if settings["reset_collection"] and settings["hard_reset"]:
-            print(f"Hard resetting collection: {self.collection_name}")
+        # 如果需要初始化document_store而非使用自定义retriever
+        if custom_retriever is None:
+            # 如果需要硬重置，直接删除原有collection
+            if settings["reset_collection"] and settings["hard_reset"]:
+                print(f"Hard resetting collection: {self.collection_name}")
+                try:
+                    success = CustomChromaDocumentStore.delete_collection(self.persist_dir, self.collection_name)
+                    if success:
+                        print(f"Successfully deleted collection: {self.collection_name}")
+                        delete_collection_metadata(self.collection_name)
+                    else:
+                        print(f"Collection {self.collection_name} not found or could not be deleted")
+                except Exception as e:
+                    print(f"Error deleting collection: {e}")
+            # 如果只是软重置，使用时间戳创建新集合
+            elif settings["reset_collection"]:
+                import time
+                timestamp = int(time.time())
+                self.collection_name = f"{self.collection_name}_{timestamp}"
+                print(f"Soft reset: Using new collection with timestamp: {self.collection_name}")
+            
+            # Initialize document store
             try:
-                success = CustomChromaDocumentStore.delete_collection(self.persist_dir, self.collection_name)
-                if success:
-                    print(f"Successfully deleted collection: {self.collection_name}")
-                    delete_collection_metadata(self.collection_name)
-                else:
-                    print(f"Collection {self.collection_name} not found or could not be deleted")
+                # 不再手动指定嵌入维度，依赖模型的默认配置
+                self.document_store = CustomChromaDocumentStore(
+                    persist_dir=self.persist_dir,
+                    collection_name=self.collection_name
+                )
+                
+                # 保存collection元数据
+                if settings["reset_collection"] or not get_embedding_model(self.collection_name):
+                    save_collection_metadata(self.collection_name, settings["embedding_model"])
+                
             except Exception as e:
-                print(f"Error deleting collection: {e}")
-        # 如果只是软重置，使用时间戳创建新集合
-        elif settings["reset_collection"]:
-            import time
-            timestamp = int(time.time())
-            self.collection_name = f"{self.collection_name}_{timestamp}"
-            print(f"Soft reset: Using new collection with timestamp: {self.collection_name}")
-        
-        # Initialize document store
-        try:
-            # 不再手动指定嵌入维度，依赖模型的默认配置
-            self.document_store = CustomChromaDocumentStore(
-                persist_dir=self.persist_dir,
-                collection_name=self.collection_name
-            )
-            
-            # 保存collection元数据
-            if settings["reset_collection"] or not get_embedding_model(self.collection_name):
-                save_collection_metadata(self.collection_name, settings["embedding_model"])
-            
-        except Exception as e:
-            print(f"Error initializing document store: {e}")
-            raise ValueError(f"Failed to initialize ChromaDocumentStore: {e}")
+                print(f"Error initializing document store: {e}")
+                raise ValueError(f"Failed to initialize ChromaDocumentStore: {e}")
 
         # 使用提示词模板
         self.chat_template = get_template(settings["prompt_template"])
@@ -180,10 +186,17 @@ class RAGPipeline:
         # Initialize components
         self.text_embedder = SentenceTransformersTextEmbedder(model=settings["embedding_model"])
         self.document_embedder = SentenceTransformersDocumentEmbedder(model=settings["embedding_model"])
-        self.retriever = ChromaEmbeddingRetriever(
-            document_store=self.document_store,
-            top_k=settings["top_k"]
-        )
+        
+        # 使用自定义检索器或创建新的检索器
+        if custom_retriever is not None:
+            print("使用自定义检索器")
+            self.retriever = custom_retriever
+        else:
+            self.retriever = ChromaEmbeddingRetriever(
+                document_store=self.document_store,
+                top_k=settings["top_k"]
+            )
+        
         self.prompt_builder = ChatPromptBuilder(template=self.chat_template)
         self.generator = OpenAIChatGenerator(
             model=settings["llm_model"],
@@ -194,12 +207,13 @@ class RAGPipeline:
         self.text_embedder.warm_up()
         self.document_embedder.warm_up()
 
-    def _create_pipeline(self, use_llm: bool = True) -> Pipeline:
+    def _create_pipeline(self, use_llm: bool = True, custom_retriever = None) -> Pipeline:
         """
         Create a new pipeline using the current components.
         
         Args:
             use_llm: Whether to include LLM in the pipeline (if False, only retriever will be used)
+            custom_retriever: 可选的自定义检索器，如果提供则使用它替代默认检索器
             
         Returns:
             Haystack Pipeline
@@ -208,7 +222,10 @@ class RAGPipeline:
             # Create and connect pipeline
             pipeline = Pipeline()
             pipeline.add_component("text_embedder", self.text_embedder)
-            pipeline.add_component("retriever", self.retriever)
+            
+            # 如果提供了自定义检索器，使用它替代默认检索器
+            retriever_to_use = custom_retriever if custom_retriever else self.retriever
+            pipeline.add_component("retriever", retriever_to_use)
 
             # 根据use_llm参数决定是否添加和连接LLM相关组件
             if use_llm:
@@ -226,12 +243,13 @@ class RAGPipeline:
             print(f"Error creating pipeline: {e}")
             raise ValueError(f"无法初始化RAG pipeline: {e}")
 
-    def create_new_pipeline(self, use_llm: bool = True, **kwargs) -> None:
+    def create_new_pipeline(self, use_llm: bool = True, custom_retriever=None, **kwargs) -> None:
         """
         Create a new pipeline with optional parameter overrides and set it as current.
         
         Args:
             use_llm: Whether to include LLM in the pipeline
+            custom_retriever: Optional custom retriever to use instead of creating a new one
             **kwargs: Optional parameters to override default settings
         """
         # Merge default settings with overrides
@@ -239,7 +257,7 @@ class RAGPipeline:
         settings.update(kwargs)
         
         # Initialize components with new settings
-        self._initialize_with_settings(settings)
+        self._initialize_with_settings(settings, custom_retriever=custom_retriever)
         
         # Create new pipeline
         new_pipeline = self._create_pipeline(use_llm=use_llm)
@@ -281,6 +299,84 @@ class RAGPipeline:
                 return results
             except Exception as e:
                 raise ValueError(f"查询处理失败: {e}")
+
+    def run_with_selected_title(self, query: str, title: str):
+        """
+        通过创建临时管道实现按标题过滤检索。
+        
+        Args:
+            query: 用户问题
+            title: 要过滤的文档标题
+        """
+        try:
+            # 获取指定title的文档，优先使用缓存
+            if title in self._title_doc_store_cache:
+                filtered_docs = self._title_doc_store_cache[title]["docs"]
+                print(f"使用缓存的文档，标题 '{title}' 包含 {len(filtered_docs)} 个文档")
+                # 更新最后使用时间
+                import time
+                self._title_doc_store_cache[title]["last_used"] = time.time()
+            else:
+                # 从主文档存储中获取所有文档
+                all_docs = self.document_store.filter_documents({})
+                
+                # 过滤出指定title的文档
+                filtered_docs = [doc for doc in all_docs if doc.meta and doc.meta.get("title") == title]
+                
+                if not filtered_docs:
+                    # 如果没有找到匹配的文档，返回空结果
+                    return {"retriever": {"documents": []}}
+                
+                # 将过滤后的文档添加到缓存
+                import time
+                self._title_doc_store_cache[title] = {
+                    "docs": filtered_docs,
+                    "docs_count": len(filtered_docs),
+                    "last_used": time.time()
+                }
+                
+                print(f"创建标题为 '{title}' 的文档缓存，包含 {len(filtered_docs)} 个文档")
+            
+            # 为这个查询创建全新的临时文档存储和检索器
+            from haystack.document_stores.in_memory import InMemoryDocumentStore
+            from haystack.components.retrievers.in_memory import InMemoryEmbeddingRetriever
+            
+            # 创建临时文档存储
+            temp_doc_store = InMemoryDocumentStore()
+            temp_doc_store.write_documents(filtered_docs)
+            
+            # 创建临时检索器
+            temp_retriever = InMemoryEmbeddingRetriever(
+                document_store=temp_doc_store,
+                top_k=self.default_settings["top_k"]
+            )
+            
+            # 保存当前的管道
+            current_pipeline_backup = self.current_pipeline
+            
+            # 创建临时管道，使用自定义检索器
+            self.create_new_pipeline(
+                use_llm=self.default_settings["use_llm"],
+                custom_retriever=temp_retriever
+            )
+            
+            # 运行查询
+            try:
+                results = self.run(query)
+            finally:
+                # 恢复原始管道
+                self.current_pipeline = current_pipeline_backup
+            
+            # 管理缓存大小，当缓存项超过10个时，删除最旧的项
+            if len(self._title_doc_store_cache) > 10:
+                oldest_title = min(self._title_doc_store_cache.keys(), 
+                                  key=lambda k: self._title_doc_store_cache[k]["last_used"])
+                print(f"缓存管理：删除最旧的文档缓存 '{oldest_title}'")
+                del self._title_doc_store_cache[oldest_title]
+            
+            return results
+        except Exception as e:
+            raise ValueError(f"查询处理失败: {e}")
 
     def add_documents(self, documents: List[Document], check_duplicates: bool = False) -> None:
         """

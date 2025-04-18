@@ -89,16 +89,19 @@ def load_documents(directory_path: str, file_types: Optional[List[str]] = None) 
             if any(file.lower().endswith(ft) for ft in file_types):
                 file_path = os.path.join(root, file)
                 try:
+                    # 从文件名中提取标题（去除文件扩展名）
+                    filename_without_ext = os.path.splitext(file)[0]
+                    
                     if file.lower().endswith('.pdf'):
-                        docs = load_pdf(file_path)
+                        docs = load_pdf(file_path, filename_without_ext)
                     elif file.lower().endswith('.txt'):
-                        docs = load_text(file_path)
+                        docs = load_text(file_path, filename_without_ext)
                     elif file.lower().endswith('.md'):
-                        docs = load_markdown(file_path)
+                        docs = load_markdown(file_path, filename_without_ext)
                     elif file.lower().endswith(('.html', '.htm')):
-                        docs = load_html(file_path)
+                        docs = load_html(file_path, filename_without_ext)
                     elif file.lower().endswith('.docx'):
-                        docs = load_docx(file_path)
+                        docs = load_docx(file_path, filename_without_ext)
                     else:
                         continue
                     
@@ -130,12 +133,13 @@ def load_documents(directory_path: str, file_types: Optional[List[str]] = None) 
     
     return documents
 
-def load_pdf(file_path: str) -> List[Document]:
+def load_pdf(file_path: str, title: Optional[str] = None) -> List[Document]:
     """
     Load and preprocess PDF documents.
     
     Args:
         file_path: Path to the PDF file
+        title: Document title (typically from filename)
     
     Returns:
         List of Document objects
@@ -161,7 +165,8 @@ def load_pdf(file_path: str) -> List[Document]:
                         meta={
                             "source": file_path,
                             "page": i + 1,
-                            "file_type": "pdf"
+                            "file_type": "pdf",
+                            "title": title
                         }
                     )
                     documents.append(doc)
@@ -173,12 +178,13 @@ def load_pdf(file_path: str) -> List[Document]:
     
     return documents
 
-def load_text(file_path: str) -> List[Document]:
+def load_text(file_path: str, title: Optional[str] = None) -> List[Document]:
     """
     Load and preprocess text documents.
     
     Args:
         file_path: Path to the text file
+        title: Document title (typically from filename)
     
     Returns:
         List of Document objects
@@ -196,7 +202,8 @@ def load_text(file_path: str) -> List[Document]:
                 meta={
                     "source": file_path,
                     "file_type": "txt",
-                    "encoding": encoding
+                    "encoding": encoding,
+                    "title": title
                 }
             )
             return [doc]
@@ -210,12 +217,13 @@ def load_text(file_path: str) -> List[Document]:
     print(f"Error processing text file {file_path}: Unable to decode with any supported encoding")
     return []
 
-def load_markdown(file_path: str) -> List[Document]:
+def load_markdown(file_path: str, title: Optional[str] = None) -> List[Document]:
     """
     Load and preprocess Markdown documents.
     
     Args:
         file_path: Path to the Markdown file
+        title: Document title (typically from filename)
     
     Returns:
         List of Document objects
@@ -237,7 +245,8 @@ def load_markdown(file_path: str) -> List[Document]:
                 meta={
                     "source": file_path,
                     "file_type": "md",
-                    "encoding": encoding
+                    "encoding": encoding,
+                    "title": title
                 }
             )
             return [doc]
@@ -251,12 +260,13 @@ def load_markdown(file_path: str) -> List[Document]:
     print(f"Error processing Markdown file {file_path}: Unable to decode with any supported encoding")
     return []
 
-def load_html(file_path: str) -> List[Document]:
+def load_html(file_path: str, title: Optional[str] = None) -> List[Document]:
     """
     Load and preprocess HTML documents.
     
     Args:
         file_path: Path to the HTML file
+        title: Document title (typically from filename)
     
     Returns:
         List of Document objects
@@ -283,13 +293,17 @@ def load_html(file_path: str) -> List[Document]:
             text = re.sub(r'\s+', ' ', text).strip()
             
             if text:
+                # 首选<title>标签中的标题，其次是传入的文件名标题
+                html_title = soup.title.string if soup.title else None
+                doc_title = html_title or title
+                
                 doc = Document(
                     content=text,
                     meta={
                         "source": file_path,
                         "file_type": "html",
                         "encoding": encoding,
-                        "title": soup.title.string if soup.title else None
+                        "title": doc_title
                     }
                 )
                 return [doc]
@@ -303,12 +317,13 @@ def load_html(file_path: str) -> List[Document]:
     print(f"Error processing HTML file {file_path}: Unable to decode with any supported encoding")
     return []
 
-def load_docx(file_path: str) -> List[Document]:
+def load_docx(file_path: str, title: Optional[str] = None) -> List[Document]:
     """
     Load and preprocess DOCX documents.
     
     Args:
         file_path: Path to the DOCX file
+        title: Document title (typically from filename)
     
     Returns:
         List of Document objects
@@ -342,7 +357,8 @@ def load_docx(file_path: str) -> List[Document]:
                 content=text,
                 meta={
                     "source": file_path,
-                    "file_type": "docx"
+                    "file_type": "docx",
+                    "title": title
                 }
             )
             documents.append(doc)

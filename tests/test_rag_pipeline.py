@@ -378,3 +378,98 @@ def test_add_to_existing_collection(api_key):
         pipeline2.reset_document_store()
     except Exception as e:
         print(f"Warning: Could not reset document store: {e}") 
+
+@pytest.mark.title_filter
+def test_title_filtered_retrieval():
+    """
+    Test that retrieval can be filtered by document title.
+    
+    This test creates two documents with different titles, adds them to the pipeline,
+    and then verifies that:
+    1. Querying with a specific title that exists returns results
+    2. Querying with a title that doesn't exist returns no results
+    3. Querying without a title filter returns different results than with a title filter
+    """
+    # Use a unique collection name for this test
+    import time
+    collection_name = f"test_title_filter_{int(time.time())}"
+    
+    # Initialize pipeline
+    pipeline = RAGPipeline(
+        collection_name=collection_name,
+        reset_collection=True,
+        use_llm=False
+    )
+    
+    # Create two test documents with different titles
+    doc1 = Document(
+        content="Python is a high-level programming language known for its readability and simplicity. " 
+                "It's widely used for web development, data analysis, artificial intelligence, and automation.",
+        meta={
+            "source": "test_title_filter_doc1",
+            "file_type": "txt",
+            "title": "programming_languages"
+        }
+    )
+    
+    doc2 = Document(
+        content="Machine learning is a subset of artificial intelligence that focuses on algorithms " 
+                "that can learn from and make predictions based on data. Deep learning is a type of " 
+                "machine learning that uses neural networks with many layers.",
+        meta={
+            "source": "test_title_filter_doc2", 
+            "file_type": "txt",
+            "title": "machine_learning"
+        }
+    )
+    
+    # Add documents to pipeline
+    pipeline.add_documents([doc1, doc2])
+    
+    # Query that could match both documents
+    query = "Tell me about artificial intelligence"
+    
+    # 1. Test retrieval with existing title filter
+    results_title1 = pipeline.run_with_selected_title(query, "programming_languages")
+    assert results_title1 is not None
+    assert "retriever" in results_title1
+    assert "documents" in results_title1["retriever"]
+    assert len(results_title1["retriever"]["documents"]) > 0
+    assert "programming_languages" == results_title1["retriever"]["documents"][0].meta["title"]
+    
+    # 2. Test retrieval with non-existent title filter
+    results_title_nonexistent = pipeline.run_with_selected_title(query, "nonexistent_title")
+    assert results_title_nonexistent is not None
+    assert "retriever" in results_title_nonexistent
+    assert "documents" in results_title_nonexistent["retriever"]
+    assert len(results_title_nonexistent["retriever"]["documents"]) == 0
+    
+    # 3. Test unfiltered retrieval (should be different from title-filtered)
+    results_unfiltered = pipeline.run(query)
+    assert results_unfiltered is not None
+    assert "retriever" in results_unfiltered
+    assert "documents" in results_unfiltered["retriever"]
+    
+    # Check if unfiltered returns both documents or at least different ones than when filtered
+    unfiltered_titles = set(doc.meta["title"] for doc in results_unfiltered["retriever"]["documents"])
+    assert len(unfiltered_titles) > 0
+    
+    # Verify that unfiltered results are different from title-filtered results
+    filtered_docs = [doc.content for doc in results_title1["retriever"]["documents"]]
+    unfiltered_docs = [doc.content for doc in results_unfiltered["retriever"]["documents"]]
+    
+    # The unfiltered and filtered results should be different in content or count
+    assert filtered_docs != unfiltered_docs or len(filtered_docs) != len(unfiltered_docs)
+    
+    # Optional: Compare with retrieval using the second title
+    results_title2 = pipeline.run_with_selected_title(query, "machine_learning")
+    filtered_docs2 = [doc.content for doc in results_title2["retriever"]["documents"]]
+    
+    # Verify that different title filters give different results
+    assert filtered_docs != filtered_docs2 or len(filtered_docs) != len(filtered_docs2)
+    
+    print("\nTest completed successfully:")
+    print(f"- Programming languages document filtered results: {len(results_title1['retriever']['documents'])}")
+    print(f"- Machine learning document filtered results: {len(results_title2['retriever']['documents'])}")
+    print(f"- Non-existent title filtered results: {len(results_title_nonexistent['retriever']['documents'])}")
+    print(f"- Unfiltered results: {len(results_unfiltered['retriever']['documents'])}") 

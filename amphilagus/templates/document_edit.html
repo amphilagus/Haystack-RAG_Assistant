@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+
+{% block title %}编辑文档 - {{ document.title or document.id }}{% endblock %}
+
+{% block styles %}
+<style>
+    .document-header {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+    .document-title {
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+    .editor-container {
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        overflow: hidden;
+    }
+    .editor-toolbar {
+        padding: 0.5rem;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #ced4da;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+    .editor-toolbar button {
+        font-size: 0.875rem;
+        padding: 0.25rem 0.5rem;
+        background-color: transparent;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        color: #495057;
+        cursor: pointer;
+    }
+    .editor-toolbar button:hover {
+        background-color: #e9ecef;
+    }
+    .editor-toolbar .separator {
+        width: 1px;
+        background-color: #ced4da;
+        margin: 0 0.5rem;
+    }
+    .editor-content {
+        min-height: 400px;
+        padding: 1rem;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    .editor-content:focus {
+        outline: none;
+    }
+    .preview-panel {
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        padding: 1rem;
+        min-height: 400px;
+        overflow-y: auto;
+        background-color: #fff;
+    }
+    .tags-input-container {
+        background-color: #fff;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        min-height: 38px;
+    }
+    .tag-item {
+        background-color: #e9ecef;
+        color: #212529;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    .tag-item .remove-tag {
+        cursor: pointer;
+        font-size: 0.75rem;
+    }
+    .tags-input {
+        flex: 1;
+        border: none;
+        outline: none;
+        padding: 0.25rem 0;
+        min-width: 50px;
+    }
+    .markdown-text {
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    .markdown-text h1, .markdown-text h2, .markdown-text h3,
+    .markdown-text h4, .markdown-text h5, .markdown-text h6 {
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    .markdown-text h1 {
+        font-size: 1.75rem;
+    }
+    .markdown-text h2 {
+        font-size: 1.5rem;
+    }
+    .markdown-text h3 {
+        font-size: 1.25rem;
+    }
+    .markdown-text p {
+        margin-bottom: 1rem;
+    }
+    .markdown-text pre {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.25rem;
+        overflow-x: auto;
+        margin-bottom: 1rem;
+    }
+    .markdown-text blockquote {
+        border-left: 4px solid #dee2e6;
+        padding-left: 1rem;
+        color: #6c757d;
+        margin-bottom: 1rem;
+    }
+    .markdown-text ul, .markdown-text ol {
+        margin-bottom: 1rem;
+        padding-left: 1.5rem;
+    }
+    .markdown-text table {
+        width: 100%;
+        margin-bottom: 1rem;
+        border-collapse: collapse;
+    }
+    .markdown-text table th,
+    .markdown-text table td {
+        padding: 0.5rem;
+        border: 1px solid #dee2e6;
+    }
+    .markdown-text table thead th {
+        background-color: #f8f9fa;
+    }
+    .preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- 顶部导航 -->
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('database_dashboard') }}">数据库管理</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('view_collection', collection_name=collection_name) }}">{{ collection_name }}</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('view_document_details', collection_name=collection_name, document_id=document.id) }}">{{ document.title or document.id }}</a></li>
+            <li class="breadcrumb-item active" aria-current="page">编辑</li>
+        </ol>
+    </nav>
+
+    <!-- 文档头部 -->
+    <div class="document-header">
+        <div class="document-title">
+            <h1>编辑文档</h1>
+        </div>
+    </div>
+
+    <form action="{{ url_for('edit_document', collection_name=collection_name, document_id=document.id) }}" method="post">
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    <label for="title" class="form-label">标题</label>
+                    <input type="text" class="form-control" id="title" name="title" value="{{ document.title }}" required>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="mb-3">
+                    <label class="form-label">标签</label>
+                    <div class="tags-input-container" id="tagsContainer">
+                        <input type="text" class="tags-input" id="tagInput" placeholder="输入标签后按回车添加">
+                    </div>
+                    <input type="hidden" name="tags" id="tagsField" value="{{ document.tags|tojson }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label for="description" class="form-label">描述</label>
+            <textarea class="form-control" id="description" name="description" rows="2">{{ document.description }}</textarea>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    <label for="content" class="form-label">内容</label>
+                    <div class="editor-container">
+                        <div class="editor-toolbar">
+                            <button type="button" data-action="heading-1"><strong>H1</strong></button>
+                            <button type="button" data-action="heading-2"><strong>H2</strong></button>
+                            <button type="button" data-action="heading-3"><strong>H3</strong></button>
+                            <span class="separator"></span>
+                            <button type="button" data-action="bold"><i class="fas fa-bold"></i></button>
+                            <button type="button" data-action="italic"><i class="fas fa-italic"></i></button>
+                            <button type="button" data-action="code"><i class="fas fa-code"></i></button>
+                            <span class="separator"></span>
+                            <button type="button" data-action="link"><i class="fas fa-link"></i></button>
+                            <button type="button" data-action="list-ul"><i class="fas fa-list-ul"></i></button>
+                            <button type="button" data-action="list-ol"><i class="fas fa-list-ol"></i></button>
+                            <button type="button" data-action="quote"><i class="fas fa-quote-right"></i></button>
+                        </div>
+                        <textarea class="form-control editor-content" id="content" name="content" rows="15">{{ document.text }}</textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="preview-header">
+                    <label class="form-label">预览</label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="refreshPreview">
+                        <i class="fas fa-sync-alt"></i> 刷新预览
+                    </button>
+                </div>
+                <div class="preview-panel markdown-text" id="previewPanel"></div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between mt-4">
+            <a href="{{ url_for('view_document_details', collection_name=collection_name, document_id=document.id) }}" class="btn btn-secondary">
+                <i class="fas fa-times"></i> 取消
+            </a>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save"></i> 保存更改
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 1. 标签输入处理
+        const tagsContainer = document.getElementById('tagsContainer');
+        const tagInput = document.getElementById('tagInput');
+        const tagsField = document.getElementById('tagsField');
+        
+        let tags = [];
+        try {
+            tags = JSON.parse(tagsField.value || '[]');
+        } catch (e) {
+            tags = [];
+        }
+        
+        // 初始化标签显示
+        function initTags() {
+            tags.forEach(tag => {
+                addTagToDOM(tag);
+            });
+        }
+        
+        function updateTagsField() {
+            tagsField.value = JSON.stringify(tags);
+        }
+        
+        function addTagToDOM(tag) {
+            const tagItem = document.createElement('div');
+            tagItem.className = 'tag-item';
+            
+            const tagText = document.createElement('span');
+            tagText.textContent = tag;
+            
+            const removeBtn = document.createElement('span');
+            removeBtn.innerHTML = '&times;';
+            removeBtn.className = 'remove-tag';
+            removeBtn.addEventListener('click', function() {
+                tags = tags.filter(t => t !== tag);
+                tagItem.remove();
+                updateTagsField();
+            });
+            
+            tagItem.appendChild(tagText);
+            tagItem.appendChild(removeBtn);
+            
+            tagsContainer.insertBefore(tagItem, tagInput);
+        }
+        
+        function addTag(tag) {
+            if (tag.trim() === '' || tags.includes(tag.trim())) return;
+            
+            tags.push(tag.trim());
+            addTagToDOM(tag.trim());
+            updateTagsField();
+            tagInput.value = '';
+        }
+        
+        tagInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                addTag(this.value);
+            }
+        });
+        
+        // 初始化标签
+        initTags();
+        
+        // 2. Markdown 编辑器功能
+        const editor = document.getElementById('content');
+        const previewPanel = document.getElementById('previewPanel');
+        const refreshPreviewBtn = document.getElementById('refreshPreview');
+        const toolbarButtons = document.querySelectorAll('.editor-toolbar button');
+        
+        // 工具栏操作
+        toolbarButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const action = this.getAttribute('data-action');
+                applyAction(action);
+            });
+        });
+        
+        function applyAction(action) {
+            const selStart = editor.selectionStart;
+            const selEnd = editor.selectionEnd;
+            const selectedText = editor.value.substring(selStart, selEnd);
+            let replacement = '';
+            
+            switch (action) {
+                case 'heading-1':
+                    replacement = `# ${selectedText}`;
+                    break;
+                case 'heading-2':
+                    replacement = `## ${selectedText}`;
+                    break;
+                case 'heading-3':
+                    replacement = `### ${selectedText}`;
+                    break;
+                case 'bold':
+                    replacement = `**${selectedText}**`;
+                    break;
+                case 'italic':
+                    replacement = `*${selectedText}*`;
+                    break;
+                case 'code':
+                    replacement = `\`${selectedText}\``;
+                    break;
+                case 'link':
+                    if (selectedText) {
+                        replacement = `[${selectedText}](url)`;
+                    } else {
+                        replacement = `[链接文本](url)`;
+                    }
+                    break;
+                case 'list-ul':
+                    replacement = selectedText.split('\n').map(line => `- ${line}`).join('\n');
+                    break;
+                case 'list-ol':
+                    replacement = selectedText.split('\n').map((line, i) => `${i+1}. ${line}`).join('\n');
+                    break;
+                case 'quote':
+                    replacement = selectedText.split('\n').map(line => `> ${line}`).join('\n');
+                    break;
+            }
+            
+            // 插入替换文本
+            editor.focus();
+            document.execCommand('insertText', false, replacement);
+            
+            // 更新预览
+            updatePreview();
+        }
+        
+        // 更新预览
+        function updatePreview() {
+            let content = editor.value;
+            
+            // 处理标题
+            content = content.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            content = content.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            content = content.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            content = content.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+            content = content.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
+            content = content.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
+            
+            // 处理强调
+            content = content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            content = content.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            
+            // 处理代码
+            content = content.replace(/`(.+?)`/g, '<code>$1</code>');
+            
+            // 处理链接
+            content = content.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
+            
+            // 处理列表
+            const ulRegex = /^- (.+)$/gm;
+            const olRegex = /^\d+\. (.+)$/gm;
+            
+            if (content.match(ulRegex)) {
+                content = content.replace(/(?:^- .+$\n?)+/gm, function(match) {
+                    return '<ul>\n' + match.replace(ulRegex, '<li>$1</li>') + '\n</ul>';
+                });
+            }
+            
+            if (content.match(olRegex)) {
+                content = content.replace(/(?:^\d+\. .+$\n?)+/gm, function(match) {
+                    return '<ol>\n' + match.replace(olRegex, '<li>$1</li>') + '\n</ol>';
+                });
+            }
+            
+            // 处理引用
+            content = content.replace(/(?:^> .+$\n?)+/gm, function(match) {
+                return '<blockquote>\n' + match.replace(/^> (.+)$/gm, '$1') + '\n</blockquote>';
+            });
+            
+            // 处理段落和换行
+            content = content.replace(/\n\n/g, '</p><p>');
+            content = `<p>${content}</p>`;
+            
+            // 更新预览
+            previewPanel.innerHTML = content;
+        }
+        
+        // 监听编辑器输入
+        editor.addEventListener('input', function() {
+            updatePreview();
+        });
+        
+        // 刷新预览按钮
+        refreshPreviewBtn.addEventListener('click', function() {
+            updatePreview();
+        });
+        
+        // 初始加载预览
+        updatePreview();
+    });
+</script>
+{% endblock %} 

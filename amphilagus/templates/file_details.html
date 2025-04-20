@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - 文件详情{% endblock %}
+
+{% block header %}文件详情{% endblock %}
+{% block subheader %}{{ file.filename }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('list_files') }}">文件列表</a></li>
+                <li class="breadcrumb-item active">{{ file.filename }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h4 class="my-0">文件信息</h4>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h5>标签</h5>
+                    {% if file.tags %}
+                        <div>
+                            {% for tag in file.tags %}
+                                <a href="{{ url_for('filter_files', tag=tag) }}" class="badge bg-info p-2 me-2 mb-2 text-decoration-none">
+                                    {{ tag }}
+                                </a>
+                            {% endfor %}
+                            <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-sm btn-outline-primary ms-2">
+                                <i class="fas fa-edit me-1"></i>管理标签
+                            </a>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">
+                            无标签
+                            <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-sm btn-outline-primary ms-2">
+                                <i class="fas fa-plus me-1"></i>添加标签
+                            </a>
+                        </p>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-3">
+                    <h5>描述</h5>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div id="description-display" class="flex-grow-1">
+                            <p>{{ file.description or '无描述' }}</p>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary ms-2" id="edit-description-btn">
+                            <i class="fas fa-edit me-1"></i>编辑
+                        </button>
+                    </div>
+                    <div id="description-editor" class="mt-2" style="display: none;">
+                        <form action="{{ url_for('update_description', filename=file.filename) }}" method="post">
+                            <div class="mb-3">
+                                <textarea class="form-control" id="description" name="description" rows="3">{{ file.description }}</textarea>
+                            </div>
+                            <div class="d-flex justify-content-end">
+                                <button type="button" class="btn btn-outline-secondary me-2" id="cancel-edit-btn">取消</button>
+                                <button type="submit" class="btn btn-primary">保存</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                {% if file.additional_info %}
+                    <div class="mb-3">
+                        <h5>附加信息</h5>
+                        <table class="table table-sm">
+                            <tbody>
+                                {% for key, value in file.additional_info.items() %}
+                                    <tr>
+                                        <th>{{ key }}</th>
+                                        <td>{{ value }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h4 class="my-0">操作</h4>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-outline-danger" 
+                            onclick="confirmDelete('{{ file.filename }}')">
+                        <i class="fas fa-trash me-1"></i>删除文件
+                    </button>
+                    <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info">
+                        <i class="fas fa-tags me-1"></i>管理标签
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h4 class="my-0">文件路径</h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-0">{{ file.filepath }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                确定要删除文件 <strong>{{ file.filename }}</strong> 吗？此操作不可撤销。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form method="post" action="{{ url_for('delete_file', filename=file.filename) }}">
+                    <button type="submit" class="btn btn-danger">删除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function confirmDelete(filename) {
+        var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        deleteModal.show();
+    }
+    
+    // 描述编辑功能
+    document.addEventListener('DOMContentLoaded', function() {
+        const editDescriptionBtn = document.getElementById('edit-description-btn');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        const descriptionDisplay = document.getElementById('description-display');
+        const descriptionEditor = document.getElementById('description-editor');
+        
+        // 显示编辑表单
+        editDescriptionBtn.addEventListener('click', function() {
+            descriptionDisplay.style.display = 'none';
+            descriptionEditor.style.display = 'block';
+            editDescriptionBtn.style.display = 'none';
+        });
+        
+        // 取消编辑
+        cancelEditBtn.addEventListener('click', function() {
+            descriptionDisplay.style.display = 'block';
+            descriptionEditor.style.display = 'none';
+            editDescriptionBtn.style.display = 'inline-block';
+        });
+    });
+</script>
+{% endblock %} 

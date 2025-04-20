@@ -33,6 +33,9 @@ env/
 
 # RAG Project Specific
 raw_data/
+raw_data_backup/
+results/
+tasks/
 chroma_db/
 collection_metadata.json
 .env
@@ -47,9 +50,6 @@ temp/
 # Windows specific
 Thumbs.db
 desktop.ini
-
-# Data files (可选，根据需要取消注释)
-# raw_data/
 
 # Embedding cache
 .cache/

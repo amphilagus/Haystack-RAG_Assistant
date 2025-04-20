@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+
+{% block title %}上传任务管理{% endblock %}
+
+{% block styles %}
+<style>
+    .task-list {
+        margin-top: 2rem;
+    }
+    .task-card {
+        margin-bottom: 1rem;
+        transition: box-shadow 0.3s;
+    }
+    .task-card:hover {
+        box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.1);
+    }
+    .task-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .task-title {
+        font-weight: 600;
+        margin-bottom: 0;
+    }
+    .task-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin: 0.5rem 0;
+        font-size: 0.875rem;
+        color: #6c757d;
+    }
+    .task-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    .task-progress {
+        margin-top: 0.5rem;
+        height: 0.5rem;
+        margin-bottom: 0;
+    }
+    .tasks-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    .badge {
+        font-size: 0.75rem;
+    }
+    .badge-pending {
+        background-color: #6c757d;
+    }
+    .badge-processing {
+        background-color: #0d6efd;
+    }
+    .badge-completed {
+        background-color: #198754;
+    }
+    .badge-failed {
+        background-color: #dc3545;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 3rem 0;
+    }
+    .empty-state-icon {
+        font-size: 4rem;
+        color: #dee2e6;
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- 顶部导航 -->
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
+            <li class="breadcrumb-item active" aria-current="page">上传任务管理</li>
+        </ol>
+    </nav>
+
+    <!-- 成功/错误消息 -->
+    {% if get_flashed_messages() %}
+        {% for category, message in get_flashed_messages(with_categories=true) %}
+        <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- 任务列表头部 -->
+    <div class="tasks-header">
+        <h1 class="h3">上传任务列表</h1>
+        <div>
+            <a href="{{ url_for('upload_file') }}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> 新建上传任务
+            </a>
+            {% if tasks %}
+            <button id="clearCompletedBtn" class="btn btn-outline-secondary">
+                <i class="fas fa-broom"></i> 清理已完成任务
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 任务列表 -->
+    {% if tasks %}
+    <div class="task-list">
+        {% for task in tasks %}
+        <div class="card task-card" id="task-{{ task.task_id }}">
+            <div class="card-body">
+                <div class="task-header">
+                    <h5 class="task-title">
+                        {% if task.task_type == 'file_upload' %}
+                        <i class="fas fa-file-upload"></i> 文件上传任务
+                        {% else %}
+                        <i class="fas fa-tasks"></i> {{ task.task_type }}
+                        {% endif %}
+                    </h5>
+                    <span class="badge {% if task.status == 'pending' %}badge-pending{% elif task.status == 'processing' %}badge-processing{% elif task.status == 'completed' %}badge-completed{% elif task.status == 'failed' %}badge-failed{% endif %}">
+                        {% if task.status == 'pending' %}等待处理{% elif task.status == 'processing' %}处理中{% elif task.status == 'completed' %}已完成{% elif task.status == 'failed' %}失败{% endif %}
+                    </span>
+                </div>
+                <div class="task-meta">
+                    <div class="task-meta-item">
+                        <i class="fas fa-calendar"></i>
+                        <span>创建于 {{ task.created_at|datetimeformat('%Y-%m-%d %H:%M:%S') }}</span>
+                    </div>
+                    <div class="task-meta-item">
+                        <i class="fas fa-file"></i>
+                        <span>{{ task.files|length }} 个文件</span>
+                    </div>
+                    {% if task.started_at %}
+                    <div class="task-meta-item">
+                        <i class="fas fa-play"></i>
+                        <span>开始于 {{ task.started_at|datetimeformat('%Y-%m-%d %H:%M:%S') }}</span>
+                    </div>
+                    {% endif %}
+                    {% if task.completed_at %}
+                    <div class="task-meta-item">
+                        <i class="fas fa-flag-checkered"></i>
+                        <span>完成于 {{ task.completed_at|datetimeformat('%Y-%m-%d %H:%M:%S') }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if task.status == 'processing' %}
+                <div class="progress task-progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" 
+                         style="width: {{ task.progress }}%" 
+                         aria-valuenow="{{ task.progress }}" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+                {% elif task.status == 'pending' %}
+                <div class="progress task-progress">
+                    <div class="progress-bar progress-bar-striped bg-secondary" role="progressbar" 
+                         style="width: 100%" 
+                         aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+                {% elif task.status == 'completed' %}
+                <div class="progress task-progress">
+                    <div class="progress-bar bg-success" role="progressbar" 
+                         style="width: 100%" 
+                         aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+                {% elif task.status == 'failed' %}
+                <div class="progress task-progress">
+                    <div class="progress-bar bg-danger" role="progressbar" 
+                         style="width: 100%" 
+                         aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="task-actions mt-3 d-flex justify-content-between">
+                    <a href="{{ url_for('view_task', task_id=task.task_id) }}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-eye"></i> 查看详情
+                    </a>
+                    
+                    {% if task.status != 'processing' %}
+                    <button class="btn btn-sm btn-outline-danger delete-task-btn" data-task-id="{{ task.task_id }}">
+                        <i class="fas fa-trash"></i> 删除任务
+                    </button>
+                    {% endif %}
+                </div>
+                
+                {% if task.status == 'failed' and task.error %}
+                <div class="alert alert-danger mt-3 mb-0">
+                    <i class="fas fa-exclamation-triangle"></i> {{ task.error }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <i class="fas fa-tasks"></i>
+        </div>
+        <h3>没有上传任务</h3>
+        <p class="text-muted">您尚未创建任何上传任务</p>
+        <a href="{{ url_for('upload_file') }}" class="btn btn-primary mt-3">
+            <i class="fas fa-plus"></i> 创建上传任务
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 自动刷新处理中任务的状态
+        const processingTasks = document.querySelectorAll('.task-card .badge-processing');
+        
+        if (processingTasks.length > 0) {
+            setInterval(function() {
+                processingTasks.forEach(function(badge) {
+                    const taskCard = badge.closest('.task-card');
+                    const taskId = taskCard.id.replace('task-', '');
+                    
+                    fetch(`/api/tasks/${taskId}/status`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.status !== 'processing') {
+                                // 任务状态已变更，刷新页面
+                                location.reload();
+                            } else if (data.progress) {
+                                // 更新进度条
+                                const progressBar = taskCard.querySelector('.progress-bar');
+                                progressBar.style.width = `${data.progress}%`;
+                                progressBar.setAttribute('aria-valuenow', data.progress);
+                            }
+                        })
+                        .catch(error => console.error('获取任务状态出错:', error));
+                });
+            }, 3000); // 每3秒更新一次
+        }
+        
+        // 删除任务
+        const deleteButtons = document.querySelectorAll('.delete-task-btn');
+        deleteButtons.forEach(function(button) {
+            button.addEventListener('click', function() {
+                const taskId = this.getAttribute('data-task-id');
+                
+                if (confirm('确定要删除此任务吗？此操作不可撤销。')) {
+                    fetch(`/api/tasks/${taskId}/delete`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // 成功删除，移除任务卡片
+                            document.getElementById(`task-${taskId}`).remove();
+                            
+                            // 如果没有更多任务卡片，刷新页面显示空状态
+                            if (document.querySelectorAll('.task-card').length === 0) {
+                                location.reload();
+                            }
+                        } else {
+                            alert(`删除任务失败: ${data.message}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('删除任务出错:', error);
+                        alert('删除任务时发生错误，请稍后再试');
+                    });
+                }
+            });
+        });
+        
+        // 清理已完成任务
+        const clearCompletedBtn = document.getElementById('clearCompletedBtn');
+        if (clearCompletedBtn) {
+            clearCompletedBtn.addEventListener('click', function() {
+                if (confirm('确定要清理所有已完成或失败的任务吗？此操作不可撤销。')) {
+                    fetch('/api/tasks/clear-completed', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // 成功清理，刷新页面
+                            location.reload();
+                        } else {
+                            alert(`清理任务失败: ${data.message}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('清理任务出错:', error);
+                        alert('清理任务时发生错误，请稍后再试');
+                    });
+                }
+            });
+        }
+    });
+</script>
+{% endblock %} 

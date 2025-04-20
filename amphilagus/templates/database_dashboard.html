@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}向量数据库管理{% endblock %}
+
+{% block styles %}
+<style>
+    .dashboard-header {
+        padding: 2rem 0;
+        background-color: #f8f9fa;
+        margin-bottom: 2rem;
+    }
+    .dashboard-title {
+        font-weight: 600;
+    }
+    .dashboard-description {
+        color: #6c757d;
+        max-width: 600px;
+    }
+    .collection-card {
+        height: 100%;
+        transition: transform 0.2s, box-shadow 0.2s;
+        border: 1px solid rgba(0,0,0,0.125);
+        border-radius: 0.5rem;
+        overflow: hidden;
+    }
+    .collection-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+    }
+    .collection-card .card-header {
+        background-color: #f8f9fa;
+        font-weight: 500;
+        padding: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .collection-card .card-body {
+        padding: 1.25rem;
+    }
+    .collection-description {
+        color: #6c757d;
+        margin-bottom: 1rem;
+        height: 3rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+    .collection-meta {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        margin-bottom: 1rem;
+    }
+    .collection-meta-item {
+        display: flex;
+        align-items: center;
+    }
+    .collection-meta-item i {
+        margin-right: 0.5rem;
+        color: #6c757d;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 3rem 0;
+    }
+    .empty-state-icon {
+        font-size: 4rem;
+        color: #dee2e6;
+        margin-bottom: 1rem;
+    }
+    .create-collection-card {
+        height: 100%;
+        border: 2px dashed #ced4da;
+        border-radius: 0.5rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s, background-color 0.2s;
+    }
+    .create-collection-card:hover {
+        border-color: #0d6efd;
+        background-color: rgba(13, 110, 253, 0.05);
+    }
+    .create-collection-icon {
+        font-size: 2.5rem;
+        color: #6c757d;
+        margin-bottom: 1rem;
+    }
+    .create-collection-card:hover .create-collection-icon {
+        color: #0d6efd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- 顶部区域 -->
+    <div class="dashboard-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h1 class="dashboard-title">向量数据库管理</h1>
+                <p class="dashboard-description">管理您的文档集合、上传文档并进行语义搜索</p>
+            </div>
+            <div class="col-md-4 text-md-end">
+                <!-- 删除创建新集合按钮 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 成功/错误消息 -->
+    {% if success %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        {{ success }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        {{ error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    <!-- 集合列表 -->
+    {% if collections %}
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mb-5">
+        {% for collection in collections %}
+        <div class="col">
+            <div class="collection-card">
+                <div class="card-header">
+                    <span>{{ collection.name }}</span>
+                    <a href="{{ url_for('view_collection', collection_name=collection.name) }}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-eye"></i> 查看
+                    </a>
+                </div>
+                <div class="card-body">
+                    <div class="collection-description">
+                        {% if collection.description %}
+                        {{ collection.description }}
+                        {% else %}
+                        <em>暂无描述</em>
+                        {% endif %}
+                    </div>
+                    <div class="collection-meta">
+                        <div class="collection-meta-item">
+                            <i class="fas fa-file-alt"></i> 
+                            <span>{{ collection.document_count }} 个文档</span>
+                        </div>
+                        <div class="collection-meta-item">
+                            <i class="fas fa-project-diagram"></i> 
+                            <span>{{ collection.embedding_model }}</span>
+                        </div>
+                        <div class="collection-meta-item">
+                            <i class="fas fa-calendar-alt"></i> 
+                            <span>{{ collection.creation_time|datetimeformat('%Y-%m-%d') }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <i class="fas fa-database"></i>
+        </div>
+        <h3>没有找到集合</h3>
+        <p class="text-muted">您还没有创建任何向量数据库集合</p>
+        <!-- 删除创建集合按钮 -->
+    </div>
+    {% endif %}
+
+    <!-- 介绍卡片 -->
+    <div class="row mb-5">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="fas fa-file-upload mb-3" style="font-size: 2rem; color: #0d6efd;"></i>
+                    <h5 class="card-title">上传各种文件格式</h5>
+                    <p class="card-text">支持PDF、Markdown、TXT和Word文档等多种文件格式</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="fas fa-search mb-3" style="font-size: 2rem; color: #0d6efd;"></i>
+                    <h5 class="card-title">语义搜索</h5>
+                    <p class="card-text">基于向量嵌入的语义相似度搜索，找到最相关的内容</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="fas fa-tag mb-3" style="font-size: 2rem; color: #0d6efd;"></i>
+                    <h5 class="card-title">标签管理</h5>
+                    <p class="card-text">为文档添加标签，轻松分类和筛选您的知识库</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除创建集合模态框 -->
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 验证集合名称输入
+        const collectionNameInput = document.getElementById('collection_name');
+        if (collectionNameInput) {
+            collectionNameInput.addEventListener('input', function() {
+                const value = this.value;
+                const pattern = /^[A-Za-z0-9_]+$/;
+                
+                if (!pattern.test(value) && value !== '') {
+                    this.setCustomValidity('集合名称只能包含字母、数字和下划线');
+                } else {
+                    this.setCustomValidity('');
+                }
+            });
+        }
+    });
+</script>
+{% endblock %} 

@@ -1,0 +1,709 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - 上传文件{% endblock %}
+
+{% block header %}上传文件{% endblock %}
+{% block subheader %}添加新文件到 raw_data 目录{% endblock %}
+
+{% block styles %}
+<style>
+    .drop-zone {
+        border: 2px dashed #dee2e6;
+        border-radius: 5px;
+        padding: 2rem;
+        text-align: center;
+        transition: all 0.2s ease;
+        background-color: #f8f9fa;
+        cursor: pointer; /* 添加指针样式表示可点击 */
+    }
+    .drop-zone:hover {
+        border-color: #adb5bd;
+        background-color: rgba(0, 123, 255, 0.02);
+    }
+    .drop-zone--over {
+        border-color: #007bff;
+        background-color: rgba(0, 123, 255, 0.05);
+    }
+    .drop-zone__prompt {
+        color: #6c757d;
+        margin-bottom: 1rem;
+    }
+    .drop-zone__input {
+        display: none;
+    }
+    .drop-zone__thumb {
+        position: relative;
+        height: 100px;
+        width: 100%;
+        border-radius: 5px;
+        overflow: hidden;
+        background-color: #f8f9fa;
+        background-size: cover;
+        margin-bottom: 10px;
+    }
+    .file-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 1rem;
+    }
+    .file-item {
+        position: relative;
+        width: calc(33.333% - 12px);
+        margin-bottom: 5px;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 12px;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .file-item:hover {
+        border-color: #adb5bd;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .file-item__icon {
+        font-size: 24px;
+        margin-bottom: 8px;
+        color: #6c757d;
+    }
+    .file-item__icon.pdf { color: #dc3545; }
+    .file-item__icon.image { color: #198754; }
+    .file-item__icon.doc { color: #0d6efd; }
+    .file-item__icon.excel { color: #20c997; }
+    .file-item__icon.text { color: #6c757d; }
+    .file-item__icon.archive { color: #fd7e14; }
+    .file-item__icon.code { color: #6610f2; }
+    .file-item__name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 0.9rem;
+        font-weight: 500;
+        margin-bottom: 5px;
+    }
+    .file-item__remove {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background-color: rgba(255, 255, 255, 0.8);
+        border-radius: 50%;
+        width: 22px;
+        height: 22px;
+        line-height: 22px;
+        text-align: center;
+        cursor: pointer;
+        font-size: 0.7rem;
+        transition: all 0.15s ease;
+        border: 1px solid #dee2e6;
+    }
+    .file-item__remove:hover {
+        background-color: #dc3545;
+        color: white;
+        border-color: #dc3545;
+    }
+    .file-count {
+        font-weight: bold;
+        color: #007bff;
+    }
+    /* PDF选项卡样式 */
+    #pdfOptionsCard {
+        border-left: 3px solid #dc3545;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+    }
+    #pdfOptionsCard .card-header {
+        display: flex;
+        align-items: center;
+    }
+    #pdfOptionsCard .card-header h6 {
+        margin-left: 8px;
+    }
+    #pdfOptionsCard .card-header:before {
+        content: "\f1c1";
+        font-family: "Font Awesome 5 Free";
+        font-weight: 400;
+        color: #dc3545;
+    }
+    .form-check-input:checked {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+    @media (max-width: 768px) {
+        .file-item {
+            width: calc(50% - 12px);
+        }
+    }
+    @media (max-width: 576px) {
+        .file-item {
+            width: 100%;
+        }
+    }
+    .upload-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 8px 12px;
+        margin-top: 8px;
+    }
+    .upload-summary__count {
+        font-weight: 600;
+    }
+    .upload-summary__size {
+        color: #6c757d;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data" id="upload-form" onsubmit="return false;">
+                    <div class="mb-3">
+                        <label class="form-label">拖放文件到此区域</label>
+                        <!-- 移动input到drop-zone外部 -->
+                        <input type="file" name="files[]" id="files" class="drop-zone__input" multiple>
+                        <div class="drop-zone">
+                            <span class="drop-zone__prompt">
+                                <i class="fas fa-cloud-upload-alt fa-2x mb-2"></i><br>
+                                将文件拖放到此处上传
+                            </span>
+                        </div>
+                        <div class="file-preview mt-3" id="filePreview"></div>
+                        <div class="form-text" id="fileCount">未选择文件</div>
+                        <div class="form-text">文件大小上限为 16MB。</div>
+                    </div>
+                    
+                    <!-- PDF处理选项 -->
+                    <div class="card mb-3" id="pdfOptionsCard" style="display: none;">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0">PDF处理选项</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info mb-3" style="font-size: 0.9rem;">
+                                <i class="fas fa-info-circle me-2"></i>检测到PDF文件，以下选项可以帮助您更好地处理PDF文件。
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="useLLM" name="use_llm">
+                                <label class="form-check-label" for="useLLM">
+                                    使用LLM增强PDF转换
+                                    <span class="ms-1 small text-muted" data-bs-toggle="tooltip" data-bs-placement="top" title="使用大型语言模型(LLM)提高PDF到Markdown的转换质量，特别适用于复杂结构文档。">
+                                        <i class="fas fa-info-circle"></i>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="cleanMD" name="clean_md" checked>
+                                <label class="form-check-label" for="cleanMD">
+                                    清理生成的Markdown文件
+                                    <span class="ms-1 small text-muted" data-bs-toggle="tooltip" data-bs-placement="top" title="根据期刊类型标签（如JCTC）自动应用相应的清理规则，移除非核心内容，使文档更简洁。">
+                                        <i class="fas fa-info-circle"></i>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="tags" class="form-label">标签 <small class="text-muted">(可选)</small></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="tags" name="tags" placeholder="多个标签使用逗号分隔">
+                            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#tagsModal">
+                                选择标签
+                            </button>
+                        </div>
+                        <div class="form-text">如果标签不存在，将自动创建。</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">描述 <small class="text-muted">(可选)</small></label>
+                        <textarea class="form-control" id="description" name="description" rows="3" placeholder="文件描述..."></textarea>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('list_files') }}" class="btn btn-outline-secondary me-md-2">取消</a>
+                        <button type="button" class="btn btn-primary" id="upload-btn">
+                            <i class="fas fa-upload me-1"></i>上传
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 上传进度对话框 -->
+<div class="modal fade" id="uploadProgressModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">上传中</h5>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <p id="uploadStatusText" class="text-center">正在上传文件，请稍候...</p>
+                <div class="progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="uploadProgressBar" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tags Selection Modal -->
+<div class="modal fade" id="tagsModal" tabindex="-1" aria-labelledby="tagsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tagsModalLabel">选择标签</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                {% if tags %}
+                    <div class="mb-3">
+                        <input type="text" class="form-control" id="tagSearchInput" placeholder="搜索标签...">
+                    </div>
+                    
+                    <!-- 层级式标签选择器 -->
+                    <div id="hierarchicalTagSelector">
+                        {% set selected_tags = [] %}
+                        {% include 'components/hierarchical_tag_selector.html' with context %}
+                    </div>
+                    
+                    <!-- 已选标签预览 -->
+                    <div class="mt-3 pt-3 border-top">
+                        <h6>已选标签：</h6>
+                        <div id="selectedTagsPreview" class="mt-2"></div>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        暂无标签。您可以在上传时创建新标签，或者 <a href="{{ url_for('create_tag') }}" class="alert-link">在这里创建标签</a>。
+                    </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="applyTags">应用选择</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化工具提示
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl, {
+                placement: 'top',
+                trigger: 'hover'
+            });
+        });
+
+        // DOM元素
+        const dropZoneElement = document.querySelector('.drop-zone');
+        const inputElement = document.querySelector('.drop-zone__input');
+        const filePreview = document.getElementById('filePreview');
+        const fileCountDisplay = document.getElementById('fileCount');
+        const uploadButton = document.getElementById('upload-btn');
+        const progressModal = new bootstrap.Modal(document.getElementById('uploadProgressModal'));
+        const progressBar = document.getElementById('uploadProgressBar');
+        const uploadStatusText = document.getElementById('uploadStatusText');
+        
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // 获取文件类型图标
+        function getFileTypeIcon(filename) {
+            const extension = filename.split('.').pop().toLowerCase();
+            
+            const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
+            const docTypes = ['doc', 'docx', 'odt', 'rtf'];
+            const excelTypes = ['xls', 'xlsx', 'csv'];
+            const textTypes = ['txt', 'md'];
+            const archiveTypes = ['zip', 'rar', '7z', 'tar', 'gz'];
+            const codeTypes = ['js', 'html', 'css', 'py', 'java', 'c', 'cpp', 'rb', 'php'];
+            
+            let iconClass = 'far fa-file';
+            let colorClass = '';
+            
+            if (extension === 'pdf') {
+                iconClass = 'far fa-file-pdf';
+                colorClass = 'pdf';
+            } else if (imageTypes.includes(extension)) {
+                iconClass = 'far fa-file-image';
+                colorClass = 'image';
+            } else if (docTypes.includes(extension)) {
+                iconClass = 'far fa-file-word';
+                colorClass = 'doc';
+            } else if (excelTypes.includes(extension)) {
+                iconClass = 'far fa-file-excel';
+                colorClass = 'excel';
+            } else if (textTypes.includes(extension)) {
+                iconClass = 'far fa-file-alt';
+                colorClass = 'text';
+            } else if (archiveTypes.includes(extension)) {
+                iconClass = 'far fa-file-archive';
+                colorClass = 'archive';
+            } else if (codeTypes.includes(extension)) {
+                iconClass = 'far fa-file-code';
+                colorClass = 'code';
+            }
+            
+            return { icon: iconClass, colorClass: colorClass };
+        }
+        
+        // 更新文件预览
+        function updateFilePreview() {
+            filePreview.innerHTML = '';
+            
+            if (inputElement.files.length > 0) {
+                let totalSize = 0;
+                let hasPdfFile = false;
+                
+                Array.from(inputElement.files).forEach((file, index) => {
+                    totalSize += file.size;
+                    
+                    // 检测是否有PDF文件
+                    if (file.name.toLowerCase().endsWith('.pdf')) {
+                        hasPdfFile = true;
+                    }
+                    
+                    const fileType = getFileTypeIcon(file.name);
+                    
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.dataset.index = index;
+                    
+                    const fileIcon = document.createElement('div');
+                    fileIcon.className = `file-item__icon ${fileType.colorClass}`;
+                    fileIcon.innerHTML = `<i class="${fileType.icon}"></i>`;
+                    
+                    const fileName = document.createElement('div');
+                    fileName.className = 'file-item__name';
+                    fileName.textContent = file.name;
+                    
+                    const fileSize = document.createElement('div');
+                    fileSize.className = 'file-item__size small text-muted';
+                    fileSize.textContent = formatFileSize(file.size);
+                    
+                    const removeBtn = document.createElement('div');
+                    removeBtn.className = 'file-item__remove';
+                    removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+                    removeBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        removeFile(index);
+                    });
+                    
+                    fileItem.appendChild(fileIcon);
+                    fileItem.appendChild(fileName);
+                    fileItem.appendChild(fileSize);
+                    fileItem.appendChild(removeBtn);
+                    filePreview.appendChild(fileItem);
+                });
+                
+                // 更新文件计数和总大小
+                fileCountDisplay.innerHTML = `
+                    <div class="upload-summary">
+                        <div class="upload-summary__count">
+                            已选择 <span class="file-count">${inputElement.files.length}</span> 个文件
+                        </div>
+                        <div class="upload-summary__size">
+                            总计: ${formatFileSize(totalSize)}
+                        </div>
+                    </div>
+                `;
+                uploadButton.disabled = false;
+                
+                // 如果有PDF文件，显示PDF处理选项
+                const pdfOptionsCard = document.getElementById('pdfOptionsCard');
+                if (hasPdfFile) {
+                    pdfOptionsCard.style.display = 'block';
+                } else {
+                    pdfOptionsCard.style.display = 'none';
+                }
+            } else {
+                fileCountDisplay.innerHTML = '<div class="upload-summary">未选择文件</div>';
+                uploadButton.disabled = true;
+                
+                // 隐藏PDF处理选项
+                document.getElementById('pdfOptionsCard').style.display = 'none';
+            }
+        }
+        
+        // 移除文件
+        function removeFile(index) {
+            const dt = new DataTransfer();
+            const files = inputElement.files;
+            
+            for (let i = 0; i < files.length; i++) {
+                if (i !== index) {
+                    dt.items.add(files[i]);
+                }
+            }
+            
+            inputElement.files = dt.files;
+            updateFilePreview();
+        }
+        
+        // 拖放区域事件
+        dropZoneElement.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZoneElement.classList.add('drop-zone--over');
+        });
+        
+        ['dragleave', 'dragend'].forEach(type => {
+            dropZoneElement.addEventListener(type, function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZoneElement.classList.remove('drop-zone--over');
+            });
+        });
+        
+        dropZoneElement.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (e.dataTransfer.files.length) {
+                // 创建新的DataTransfer对象用于合并文件
+                const dt = new DataTransfer();
+                
+                // 添加已经选中的文件（如果有）
+                if (inputElement.files) {
+                    for (let i = 0; i < inputElement.files.length; i++) {
+                        // 检查文件是否已存在（通过文件名和大小比较）
+                        let isDuplicate = false;
+                        for (let j = 0; j < e.dataTransfer.files.length; j++) {
+                            if (inputElement.files[i].name === e.dataTransfer.files[j].name && 
+                                inputElement.files[i].size === e.dataTransfer.files[j].size) {
+                                isDuplicate = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!isDuplicate) {
+                            dt.items.add(inputElement.files[i]);
+                        }
+                    }
+                }
+                
+                // 添加新拖入的文件
+                for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                    dt.items.add(e.dataTransfer.files[i]);
+                }
+                
+                // 更新输入元素的文件列表
+                inputElement.files = dt.files;
+                updateFilePreview();
+            }
+            
+            dropZoneElement.classList.remove('drop-zone--over');
+        });
+        
+        // 使整个拖放区域可点击
+        dropZoneElement.addEventListener('click', function() {
+            inputElement.click();
+        });
+        
+        // 处理文件输入变化
+        inputElement.addEventListener('change', function(e) {
+            if (inputElement.files) {
+                updateFilePreview();
+            }
+        });
+        
+        // 处理上传按钮点击
+        uploadButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (inputElement.files.length === 0) {
+                alert('请至少选择一个文件上传');
+                return;
+            }
+            
+            // 显示上传进度
+            progressModal.show();
+            progressBar.style.width = '0%';
+            uploadStatusText.textContent = '正在上传文件，请稍候...';
+            
+            // 创建FormData对象
+            const formData = new FormData();
+            
+            // 添加其他字段
+            formData.append('tags', document.getElementById('tags').value);
+            formData.append('description', document.getElementById('description').value);
+            
+            // 添加PDF处理选项
+            formData.append('use_llm', document.getElementById('useLLM').checked ? 'on' : 'off');
+            formData.append('clean_md', document.getElementById('cleanMD').checked ? 'on' : 'off');
+            
+            // 添加文件
+            for (let i = 0; i < inputElement.files.length; i++) {
+                formData.append('files[]', inputElement.files[i]);
+            }
+            
+            // 发送AJAX请求
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '{{ url_for("upload_file") }}', true);
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+            
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    progressBar.style.width = percentComplete + '%';
+                    uploadStatusText.textContent = `已上传 ${Math.round(percentComplete)}%`;
+                }
+            };
+            
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (response.success) {
+                            uploadStatusText.textContent = `上传成功！正在跳转...`;
+                            // Redirect to tasks page to show the upload progress
+                            window.location.href = '{{ url_for("view_tasks") }}';
+                        } else {
+                            uploadStatusText.textContent = `上传失败: ${response.message}`;
+                            setTimeout(() => progressModal.hide(), 2000);
+                        }
+                    } catch (e) {
+                        // 如果返回的不是JSON，可能是直接重定向
+                        window.location.href = '{{ url_for("list_files") }}';
+                    }
+                } else {
+                    uploadStatusText.textContent = `上传失败: 服务器错误 (${xhr.status})`;
+                    setTimeout(() => progressModal.hide(), 2000);
+                }
+            };
+            
+            xhr.onerror = function() {
+                uploadStatusText.textContent = '上传失败: 网络错误';
+                setTimeout(() => progressModal.hide(), 2000);
+            };
+            
+            xhr.send(formData);
+        });
+        
+        // 应用选中的标签到输入框
+        document.getElementById('applyTags').addEventListener('click', function() {
+            const checkboxes = document.querySelectorAll('.tag-checkbox:checked:not([disabled])');
+            const selectedTags = Array.from(checkboxes).map(cb => cb.value);
+            document.getElementById('tags').value = selectedTags.join(', ');
+            
+            // 关闭对话框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('tagsModal'));
+            modal.hide();
+        });
+        
+        // 根据输入框值更新复选框
+        const tagsInput = document.getElementById('tags');
+        tagsInput.addEventListener('change', updateCheckboxes);
+        
+        function updateCheckboxes() {
+            const inputTags = tagsInput.value.split(',').map(t => t.trim()).filter(t => t);
+            document.querySelectorAll('.tag-checkbox:not([disabled])').forEach(function(checkbox) {
+                checkbox.checked = inputTags.includes(checkbox.value);
+            });
+            updateSelectedTagsPreview();
+        }
+        
+        // 更新已选标签预览
+        function updateSelectedTagsPreview() {
+            const checkboxes = document.querySelectorAll('.tag-checkbox:checked:not([disabled])');
+            const selectedTags = Array.from(checkboxes).map(cb => cb.value);
+            const previewElem = document.getElementById('selectedTagsPreview');
+            
+            if (selectedTags.length > 0) {
+                let html = '';
+                selectedTags.forEach(tag => {
+                    html += `<span class="badge bg-info p-2 me-2 mb-2">${tag}</span>`;
+                });
+                previewElem.innerHTML = html;
+            } else {
+                previewElem.innerHTML = '<em class="text-muted">尚未选择标签</em>';
+            }
+        }
+        
+        // 当复选框状态变化时，更新预览
+        document.querySelectorAll('.tag-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelectedTagsPreview);
+        });
+        
+        // 初始化预览
+        updateSelectedTagsPreview();
+        
+        // 标签搜索功能
+        document.getElementById('tagSearchInput').addEventListener('input', function(e) {
+            const searchText = e.target.value.toLowerCase();
+            
+            if (searchText.trim() === '') {
+                // 如果搜索框为空，显示所有层级
+                document.querySelectorAll('.tag-tree-item, .accordion-item').forEach(item => {
+                    item.style.display = '';
+                });
+                return;
+            }
+            
+            // 查找匹配的标签
+            document.querySelectorAll('.tag-checkbox').forEach(checkbox => {
+                const tagLabel = checkbox.nextElementSibling.textContent.toLowerCase();
+                const tagItem = checkbox.closest('.tag-tree-item');
+                const accordionItem = checkbox.closest('.accordion-item');
+                
+                if (tagLabel.includes(searchText)) {
+                    // 显示匹配的标签
+                    if (tagItem) {
+                        tagItem.style.display = '';
+                        
+                        // 确保父accordion也可见
+                        if (accordionItem) {
+                            accordionItem.style.display = '';
+                            
+                            // 展开匹配的accordion
+                            const collapseElem = accordionItem.querySelector('.accordion-collapse');
+                            if (collapseElem && !collapseElem.classList.contains('show')) {
+                                collapseElem.classList.add('show');
+                            }
+                        }
+                        
+                        // 展开父容器
+                        let parent = tagItem.parentElement;
+                        while (parent) {
+                            if (parent.classList.contains('collapse')) {
+                                parent.classList.add('show');
+                            }
+                            parent = parent.parentElement;
+                        }
+                    } else if (accordionItem) {
+                        accordionItem.style.display = '';
+                    }
+                } else {
+                    // 隐藏不匹配的标签
+                    if (tagItem) {
+                        tagItem.style.display = 'none';
+                    }
+                }
+            });
+        });
+    });
+</script>
+{% endblock %} 

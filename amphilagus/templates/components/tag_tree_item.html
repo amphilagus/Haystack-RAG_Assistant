@@ -1,0 +1,50 @@
+<!-- 单个标签项，支持递归显示子标签 -->
+<div class="tag-tree-item mb-2" data-tag-id="{{ child.name|replace(' ', '_') }}">
+    <div class="d-flex align-items-center">
+        <!-- 标签选择框 -->
+        <div class="form-check">
+            <input class="form-check-input tag-checkbox" type="checkbox" 
+                   id="tag-{{ child.name|replace(' ', '_') }}" 
+                   value="{{ child.name }}"
+                   {{ 'checked disabled' if selected_tags and child.name in selected_tags }}>
+            <label class="form-check-label" for="tag-{{ child.name|replace(' ', '_') }}">
+                {% if child.is_preset_tag %}
+                    <span class="badge bg-success me-1">预设</span>
+                {% elif not child.is_base_tag %}
+                    <span class="badge bg-secondary me-1">自定义</span>
+                {% endif %}
+                {{ child.name }}
+                {% if selected_tags and child.name in selected_tags %}
+                    <small class="text-success">(已添加)</small>
+                {% endif %}
+            </label>
+        </div>
+        
+        <!-- 展开折叠按钮 -->
+        {% set grand_children = [] %}
+        {% for tag in tags if tag.parent and tag.parent.name == child.name %}
+            {% set _ = grand_children.append(tag) %}
+        {% endfor %}
+        
+        {% if grand_children %}
+            <button class="btn btn-sm btn-outline-secondary ms-auto toggle-children" 
+                    type="button"
+                    data-bs-toggle="collapse" 
+                    data-bs-target="#collapse-{{ child.name|replace(' ', '_') }}"
+                    aria-expanded="false">
+                <i class="fas fa-chevron-down"></i>
+            </button>
+        {% endif %}
+    </div>
+    
+    <!-- 子标签容器 -->
+    {% if grand_children %}
+        <div class="collapse tag-children ps-4 mt-2" id="collapse-{{ child.name|replace(' ', '_') }}">
+            <!-- 递归显示子标签 -->
+            {% for grandchild in grand_children %}
+                {% set child = grandchild %}
+                {% include 'components/tag_tree_item.html' with context %}
+            {% endfor %}
+        </div>
+    {% endif %}
+</div> 

@@ -1,0 +1,44 @@
+<!-- 层级标签选择组件 -->
+<div class="hierarchical-tag-selector">
+    {% if tags %}
+        <!-- 按基础标签分组 -->
+        <div class="accordion" id="tagAccordion">
+            {% for base_tag in tags if not base_tag.parent %}
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="heading-{{ base_tag.name|replace(' ', '_') }}">
+                        <button class="accordion-button" type="button" data-bs-toggle="collapse" 
+                                data-bs-target="#collapse-{{ base_tag.name|replace(' ', '_') }}" 
+                                aria-expanded="{{ loop.first }}" aria-controls="collapse-{{ base_tag.name|replace(' ', '_') }}">
+                            <span class="badge bg-primary me-2">基础类</span> {{ base_tag.name }}
+                        </button>
+                    </h2>
+                    <div id="collapse-{{ base_tag.name|replace(' ', '_') }}" 
+                         class="accordion-collapse collapse {{ 'show' if loop.first else '' }}" 
+                         aria-labelledby="heading-{{ base_tag.name|replace(' ', '_') }}">
+                        <div class="accordion-body">
+                            <!-- 子标签列表 -->
+                            <div class="tag-children">
+                                {% set base_children = [] %}
+                                {% for tag in tags if tag.parent and tag.parent.name == base_tag.name %}
+                                    {% set _ = base_children.append(tag) %}
+                                {% endfor %}
+                                
+                                {% if base_children %}
+                                    {% for child in base_children %}
+                                        {% include 'components/tag_tree_item.html' with context %}
+                                    {% endfor %}
+                                {% else %}
+                                    <div class="text-muted small">暂无子标签</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            暂无标签。请先 <a href="{{ url_for('create_tag') }}" class="alert-link">创建标签</a>。
+        </div>
+    {% endif %}
+</div> 

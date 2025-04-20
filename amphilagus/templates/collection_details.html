@@ -1,0 +1,261 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - {{ collection.name }} 文档管理{% endblock %}
+
+{% block header %}{{ collection.name }}{% endblock %}
+{% block subheader %}Collection文档管理与搜索{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <nav aria-label="面包屑导航">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('database_dashboard') }}">数据库管理</a></li>
+                <li class="breadcrumb-item active">{{ collection.name }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h3 class="my-0">Collection 信息</h3>
+                <a href="{{ url_for('search_collection', collection_name=collection.name) }}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-search me-1"></i> 搜索
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>名称:</strong> {{ collection.name }}</p>
+                        <p><strong>文档数量:</strong> {{ collection.doc_count }}</p>
+                        <p><strong>嵌入模型:</strong> {{ collection.embedding_model }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>创建时间:</strong> {{ collection.created_at }}</p>
+                        <p><strong>存储路径:</strong> {{ chroma_db_path }}/{{ collection.name }}</p>
+                        <p><strong>数据完整性:</strong> 
+                            {% if collection.exists_in_metadata %}
+                                <span class="text-success">元数据完整</span>
+                            {% else %}
+                                <span class="text-warning">缺少元数据</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pipeline 状态 -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h3 class="my-0">Pipeline 状态</h3>
+            </div>
+            <div class="card-body">
+                {% if pipeline_status.success %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i> {{ pipeline_status.message }}
+                    </div>
+                {% else %}
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i> {{ pipeline_status.message }}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加新文档 -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h3 class="my-0">添加新文档</h3>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs" id="addDocTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="text-tab" data-bs-toggle="tab" data-bs-target="#text-input" type="button" role="tab">
+                            文本输入
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="file-tab" data-bs-toggle="tab" data-bs-target="#file-upload" type="button" role="tab">
+                            文件上传
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content mt-3" id="addDocTabContent">
+                    <!-- 文本输入 -->
+                    <div class="tab-pane fade show active" id="text-input" role="tabpanel">
+                        <form action="{{ url_for('add_document', collection_name=collection.name) }}" method="post">
+                            <div class="mb-3">
+                                <label for="document_content" class="form-label">文档内容</label>
+                                <textarea class="form-control" id="document_content" name="document_content" rows="6" required></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="metadata_text" class="form-label">元数据 (JSON格式，可选)</label>
+                                <textarea class="form-control" id="metadata_text" name="metadata_text" rows="3"></textarea>
+                                <div class="form-text">例如: {"title": "示例文档", "author": "张三", "date": "2024-01-01"}</div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">添加文档</button>
+                        </form>
+                    </div>
+                    
+                    <!-- 文件上传 -->
+                    <div class="tab-pane fade" id="file-upload" role="tabpanel">
+                        <form action="{{ url_for('add_documents_from_files', collection_name=collection.name) }}" method="post" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="files" class="form-label">选择文件</label>
+                                <input type="file" class="form-control" id="files" name="files[]" multiple required>
+                                <div class="form-text">支持: PDF, TXT, MD, DOCX等文本文件</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="metadata_json" class="form-label">共同元数据 (JSON格式，可选)</label>
+                                <textarea class="form-control" id="metadata_json" name="metadata_json" rows="3"></textarea>
+                                <div class="form-text">这些元数据将添加到所有上传的文档中</div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">上传文件</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 文档列表 -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h3 class="my-0">文档列表</h3>
+                <div>
+                    <span class="text-muted me-2">共 {{ doc_list.total }} 个文档</span>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if doc_list.documents %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 10%">ID</th>
+                                    <th style="width: 20%">元数据</th>
+                                    <th style="width: 50%">内容预览</th>
+                                    <th style="width: 20%">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for doc in doc_list.documents %}
+                                    <tr>
+                                        <td class="text-truncate" style="max-width: 150px;" title="{{ doc.id }}">
+                                            {{ doc.id[:10] }}...
+                                        </td>
+                                        <td>
+                                            {% if doc.metadata %}
+                                                <button class="btn btn-sm btn-link p-0" 
+                                                        data-bs-toggle="collapse" 
+                                                        data-bs-target="#metadata-{{ loop.index }}">
+                                                    <i class="fas fa-info-circle me-1"></i>查看元数据
+                                                </button>
+                                                <div class="collapse mt-2" id="metadata-{{ loop.index }}">
+                                                    <div class="card card-body bg-light">
+                                                        <pre class="mb-0" style="max-height: 200px; overflow-y: auto; font-size: 0.8rem;">{{ doc.metadata | tojson(indent=2) }}</pre>
+                                                    </div>
+                                                </div>
+                                            {% else %}
+                                                <span class="text-muted">无元数据</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-muted">
+                                            <div style="max-height: 100px; overflow-y: auto; font-size: 0.9rem;">
+                                                {{ doc.content_preview }}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <a href="{{ url_for('view_document_details', collection_name=collection.name, document_id=doc.id) }}" class="btn btn-sm btn-outline-primary me-1">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDeleteDoc('{{ doc.id }}')">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- 分页 -->
+                    {% if doc_list.total > doc_list.limit %}
+                        <nav aria-label="分页导航">
+                            <ul class="pagination justify-content-center">
+                                {% set total_pages = (doc_list.total + doc_list.limit - 1) // doc_list.limit %}
+                                {% set current_page = doc_list.offset // doc_list.limit + 1 %}
+                                
+                                <li class="page-item {{ 'disabled' if current_page == 1 else '' }}">
+                                    <a class="page-link" href="{{ url_for('view_collection', collection_name=collection.name, offset=0) }}">首页</a>
+                                </li>
+                                
+                                <li class="page-item {{ 'disabled' if current_page == 1 else '' }}">
+                                    <a class="page-link" href="{{ url_for('view_collection', collection_name=collection.name, offset=(current_page - 2) * doc_list.limit if current_page > 1 else 0) }}">
+                                        上一页
+                                    </a>
+                                </li>
+                                
+                                {% for page in range(max(1, current_page - 2), min(total_pages + 1, current_page + 3)) %}
+                                    <li class="page-item {{ 'active' if page == current_page else '' }}">
+                                        <a class="page-link" href="{{ url_for('view_collection', collection_name=collection.name, offset=(page - 1) * doc_list.limit) }}">
+                                            {{ page }}
+                                        </a>
+                                    </li>
+                                {% endfor %}
+                                
+                                <li class="page-item {{ 'disabled' if current_page == total_pages else '' }}">
+                                    <a class="page-link" href="{{ url_for('view_collection', collection_name=collection.name, offset=current_page * doc_list.limit if current_page < total_pages else (total_pages - 1) * doc_list.limit) }}">
+                                        下一页
+                                    </a>
+                                </li>
+                                
+                                <li class="page-item {{ 'disabled' if current_page == total_pages else '' }}">
+                                    <a class="page-link" href="{{ url_for('view_collection', collection_name=collection.name, offset=(total_pages - 1) * doc_list.limit) }}">
+                                        末页
+                                    </a>
+                                </li>
+                            </ul>
+                        </nav>
+                    {% endif %}
+                {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>这个Collection中暂无文档。
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function confirmDeleteDoc(docId) {
+        if (confirm(`确定要删除文档 "${docId.substring(0, 10)}..." 吗？此操作不可撤销。`)) {
+            // 创建表单并提交
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/database/{{ collection.name }}/documents/' + encodeURIComponent(docId) + '/delete';
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+</script>
+{% endblock %} 

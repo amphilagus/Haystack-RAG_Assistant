@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+
+{% block title %}{{ document.title or document.id }} - 文档详情{% endblock %}
+
+{% block styles %}
+<style>
+    .document-header {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+    .document-title {
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .document-metadata {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-bottom: 1rem;
+    }
+    .document-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-bottom: 1rem;
+    }
+    .document-tag {
+        background-color: #e9ecef;
+        color: #495057;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+    }
+    .document-content {
+        padding: 1.5rem;
+        background-color: #ffffff;
+        border-radius: 0.5rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+    .metadata-table {
+        font-size: 0.875rem;
+    }
+    .metadata-table th {
+        font-weight: 600;
+        padding: 0.5rem;
+        border-bottom: 1px solid #dee2e6;
+        width: 30%;
+    }
+    .metadata-table td {
+        padding: 0.5rem;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .content-nav {
+        position: sticky;
+        top: 1rem;
+        max-height: calc(100vh - 2rem);
+        overflow-y: auto;
+    }
+    .content-nav .nav-link {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    .content-nav .nav-link.active {
+        font-weight: 600;
+        color: #0d6efd;
+        background-color: rgba(13, 110, 253, 0.1);
+    }
+    .markdown-text {
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    .markdown-text h1, .markdown-text h2, .markdown-text h3,
+    .markdown-text h4, .markdown-text h5, .markdown-text h6 {
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    .markdown-text h1 {
+        font-size: 1.75rem;
+    }
+    .markdown-text h2 {
+        font-size: 1.5rem;
+    }
+    .markdown-text h3 {
+        font-size: 1.25rem;
+    }
+    .markdown-text p {
+        margin-bottom: 1rem;
+    }
+    .markdown-text pre {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.25rem;
+        overflow-x: auto;
+        margin-bottom: 1rem;
+    }
+    .markdown-text blockquote {
+        border-left: 4px solid #dee2e6;
+        padding-left: 1rem;
+        color: #6c757d;
+        margin-bottom: 1rem;
+    }
+    .markdown-text ul, .markdown-text ol {
+        margin-bottom: 1rem;
+        padding-left: 1.5rem;
+    }
+    .markdown-text table {
+        width: 100%;
+        margin-bottom: 1rem;
+        border-collapse: collapse;
+    }
+    .markdown-text table th,
+    .markdown-text table td {
+        padding: 0.5rem;
+        border: 1px solid #dee2e6;
+    }
+    .markdown-text table thead th {
+        background-color: #f8f9fa;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- 顶部导航 -->
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('database_dashboard') }}">数据库管理</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('view_collection', collection_name=collection_name) }}">{{ collection_name }}</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ document.title or document.id }}</li>
+        </ol>
+    </nav>
+
+    <!-- 文档头部 -->
+    <div class="document-header">
+        <div class="document-title">
+            <h1>{{ document.title or document.id }}</h1>
+            <div>
+                <!-- 移除编辑和删除按钮 -->
+            </div>
+        </div>
+        <div class="document-metadata">
+            <strong>ID:</strong> {{ document.id }} | 
+            {% if document.metadata.creation_time %}
+            <strong>创建时间:</strong> {{ document.metadata.creation_time|datetimeformat('%Y-%m-%d %H:%M') }}
+            {% endif %}
+        </div>
+        <div class="document-tags">
+            {% if document.metadata.tags %}
+                {% for tag in document.metadata.tags %}
+                <span class="document-tag">{{ tag }}</span>
+                {% endfor %}
+            {% else %}
+                <em class="text-muted">无标签</em>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 主要内容 -->
+    <div class="row">
+        <!-- 左侧: 文档内容 -->
+        <div class="col-md-8 mb-4">
+            <div class="document-content">
+                <h4 class="mb-3">文档内容</h4>
+                <div class="markdown-text">
+                    {{ document.content|safe }}
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右侧: 元数据和目录 -->
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">元数据</h5>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm metadata-table mb-0">
+                        <tbody>
+                            {% if document.metadata.description %}
+                            <tr>
+                                <th scope="row">描述</th>
+                                <td>{{ document.metadata.description }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if document.metadata.original_file %}
+                            <tr>
+                                <th scope="row">原始文件名</th>
+                                <td>{{ document.metadata.original_file }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if document.metadata.filename %}
+                            <tr>
+                                <th scope="row">文件名</th>
+                                <td>{{ document.metadata.filename }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if document.metadata.source %}
+                            <tr>
+                                <th scope="row">来源</th>
+                                <td>{{ document.metadata.source }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if document.metadata.author %}
+                            <tr>
+                                <th scope="row">作者</th>
+                                <td>{{ document.metadata.author }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if document.metadata.creation_time %}
+                            <tr>
+                                <th scope="row">创建时间</th>
+                                <td>{{ document.metadata.creation_time|datetimeformat }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if document.metadata.last_modified %}
+                            <tr>
+                                <th scope="row">修改时间</th>
+                                <td>{{ document.metadata.last_modified|datetimeformat }}</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="card content-nav d-none d-md-block">
+                <div class="card-header">
+                    <h5 class="mb-0">目录</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div id="tocContainer" class="list-group list-group-flush">
+                        <!-- 目录将由JS动态生成 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 生成目录
+        function generateTOC() {
+            const contentContainer = document.querySelector('.markdown-text');
+            const tocContainer = document.getElementById('tocContainer');
+            if (!contentContainer || !tocContainer) return;
+            
+            const headings = contentContainer.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            if (headings.length === 0) {
+                tocContainer.innerHTML = '<div class="list-group-item text-muted">无可用目录</div>';
+                return;
+            }
+            
+            headings.forEach((heading, index) => {
+                // 为标题添加ID以便链接
+                const id = `heading-${index}`;
+                heading.id = id;
+                
+                // 创建目录项
+                const level = parseInt(heading.tagName.substring(1));
+                const indent = (level - 1) * 12;
+                
+                const tocItem = document.createElement('a');
+                tocItem.href = `#${id}`;
+                tocItem.className = 'list-group-item list-group-item-action';
+                tocItem.style.paddingLeft = `${indent + 16}px`;
+                tocItem.textContent = heading.textContent;
+                
+                // 添加点击事件
+                tocItem.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    document.querySelector(`#${id}`).scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                    
+                    // 更新活动状态
+                    document.querySelectorAll('#tocContainer .list-group-item').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                });
+                
+                tocContainer.appendChild(tocItem);
+            });
+            
+            // 监听滚动以更新目录活动状态
+            window.addEventListener('scroll', () => {
+                const headings = document.querySelectorAll('.markdown-text h1, .markdown-text h2, .markdown-text h3, .markdown-text h4, .markdown-text h5, .markdown-text h6');
+                let currentActive = null;
+                
+                headings.forEach((heading) => {
+                    const rect = heading.getBoundingClientRect();
+                    if (rect.top <= 100) {
+                        currentActive = heading.id;
+                    }
+                });
+                
+                if (currentActive) {
+                    document.querySelectorAll('#tocContainer .list-group-item').forEach(item => {
+                        item.classList.remove('active');
+                        if (item.getAttribute('href') === `#${currentActive}`) {
+                            item.classList.add('active');
+                        }
+                    });
+                }
+            });
+        }
+        
+        // 如果内容是Markdown，渲染它
+        function processMarkdown() {
+            const contentEl = document.querySelector('.markdown-text');
+            if (!contentEl) return;
+            
+            // 简单处理Markdown基本语法
+            let content = contentEl.innerHTML;
+            
+            // 处理标题
+            content = content.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            content = content.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            content = content.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            content = content.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+            content = content.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
+            content = content.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
+            
+            // 处理强调
+            content = content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            content = content.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            
+            // 处理代码
+            content = content.replace(/`(.+?)`/g, '<code>$1</code>');
+            
+            // 处理链接
+            content = content.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
+            
+            // 处理段落和换行
+            content = content.replace(/\n\n/g, '</p><p>');
+            
+            // 更新内容
+            contentEl.innerHTML = `<p>${content}</p>`;
+            
+            // 生成目录
+            generateTOC();
+        }
+        
+        // 初始化
+        processMarkdown();
+    });
+</script>
+{% endblock %} 

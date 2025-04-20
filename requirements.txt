@@ -18,6 +18,8 @@ python-docx>=0.8.11
 
 # Web interface
 streamlit>=1.31.0
+flask>=2.3.0
+werkzeug>=2.3.0
 
 # MCP integration
 mcp[cli]

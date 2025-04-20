@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - 文件列表{% endblock %}
+
+{% block header %}文件列表{% endblock %}
+{% block subheader %}
+    {% if filter_tag %}
+        正在查看标签 <span class="badge bg-info">{{ filter_tag }}</span> 的文件
+        {% if exact %}（精确匹配）{% else %}（包含子类）{% endif %}
+        <a href="{{ url_for('list_files') }}" class="btn btn-sm btn-outline-secondary ms-2">查看全部文件</a>
+    {% else %}
+        管理 raw_data 文件
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <form action="{{ url_for('filter_files') }}" method="get" class="form-inline">
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">按标签筛选</span>
+                </div>
+                <input type="text" name="tag" class="form-control" placeholder="输入标签名" value="{{ filter_tag or '' }}">
+                <div class="input-group-text">
+                    <input class="form-check-input mt-0" type="checkbox" name="exact" value="true" {% if exact %}checked{% endif %}>
+                    <span class="ms-2">精确匹配</span>
+                </div>
+                <button type="submit" class="btn btn-primary">筛选</button>
+            </div>
+        </form>
+    </div>
+    <div class="col-md-4 text-end">
+        <a href="{{ url_for('upload_file') }}" class="btn btn-success">
+            <i class="fas fa-upload me-1"></i>上传文件
+        </a>
+    </div>
+</div>
+
+{% if files %}
+    <style>
+        /* 调整表格各列的宽度比例 */
+        .files-table th.filename-col, .files-table td.filename-col {
+            width: 30%;
+            max-width: 350px;
+        }
+        .files-table th.tags-col, .files-table td.tags-col {
+            width: 25%;
+        }
+        .files-table th.desc-col, .files-table td.desc-col {
+            width: 35%;
+        }
+        .files-table th.actions-col, .files-table td.actions-col {
+            width: 10%;
+            min-width: 120px;
+            text-align: center;
+        }
+        .files-table td.filename-col {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .files-table td.desc-col {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    </style>
+    <div class="table-responsive">
+        <table class="table table-hover files-table">
+            <thead class="table-light">
+                <tr>
+                    <th class="filename-col">文件名</th>
+                    <th class="tags-col">标签</th>
+                    <th class="desc-col">描述</th>
+                    <th class="actions-col">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for file in files %}
+                    <tr>
+                        <td class="filename-col" title="{{ file.filename }}">{{ file.filename }}</td>
+                        <td class="tags-col">
+                            {% for tag in file.tags %}
+                                <span class="badge bg-info me-1">{{ tag }}</span>
+                            {% endfor %}
+                        </td>
+                        <td class="desc-col" title="{{ file.description }}">{{ file.description[:50] }}{% if file.description|length > 50 %}...{% endif %}</td>
+                        <td class="actions-col">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('file_details', filename=file.filename) }}" class="btn btn-outline-primary" title="查看详情">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info" title="管理标签">
+                                    <i class="fas fa-tags"></i>
+                                </a>
+                                <button type="button" class="btn btn-outline-danger" title="删除文件" 
+                                        onclick="confirmDelete('{{ file.filename }}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="alert alert-secondary">
+        <i class="fas fa-info-circle me-2"></i>
+        {% if filter_tag %}
+            未找到带有标签 <strong>{{ filter_tag }}</strong> 的文件。
+        {% else %}
+            暂无文件。
+        {% endif %}
+        <a href="{{ url_for('upload_file') }}" class="alert-link">上传文件</a>
+    </div>
+{% endif %}
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                确定要删除文件 <strong id="filenameToDelete"></strong> 吗？此操作不可撤销。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form id="deleteForm" method="post" action="">
+                    <button type="submit" class="btn btn-danger">删除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function confirmDelete(filename) {
+        document.getElementById('filenameToDelete').textContent = filename;
+        document.getElementById('deleteForm').action = "/files/" + encodeURIComponent(filename) + "/delete";
+        var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        deleteModal.show();
+    }
+</script>
+{% endblock %} 

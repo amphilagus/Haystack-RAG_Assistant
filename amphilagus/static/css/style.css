@@ -1,0 +1,74 @@
+/* Custom CSS for Amphilagus Web App */
+
+/* Tag item styling for hierarchy view */
+.tag-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.tag-item:hover {
+    background-color: #f8f9fa;
+}
+
+.tag-name {
+    font-weight: 500;
+}
+
+/* File card styling */
+.file-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.file-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Badge styling */
+.badge {
+    font-weight: 500;
+    letter-spacing: 0.5px;
+}
+
+/* Custom footer */
+.footer {
+    margin-top: 5rem;
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Custom scrollbar for tag list */
+.tag-list {
+    max-height: 300px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.tag-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.tag-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.tag-list::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 3px;
+}
+
+.tag-list::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+/* Custom styling for tag hierarchy */
+#tagHierarchy {
+    padding: 10px;
+    border-radius: 4px;
+    background-color: #f8f9fa;
+    font-family: monospace;
+} 

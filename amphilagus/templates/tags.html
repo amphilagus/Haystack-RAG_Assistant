@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - 标签管理{% endblock %}
+
+{% block header %}标签管理{% endblock %}
+{% block subheader %}管理文件标签和分类体系{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-6">
+        <p>
+            标签用于对文件进行分类和组织，支持标签继承关系。
+        </p>
+    </div>
+    <div class="col-md-6 text-end">
+        <form method="post" action="{{ url_for('restore_preset_tags') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-warning me-2">
+                <i class="fas fa-sync-alt me-1"></i>恢复预设标签
+            </button>
+        </form>
+        <a href="{{ url_for('create_tag') }}" class="btn btn-success">
+            <i class="fas fa-plus me-1"></i>创建标签
+        </a>
+    </div>
+</div>
+
+{% if tags %}
+    <div class="row">
+        {% for tag in tags %}
+            <div class="col-md-4 mb-3">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ tag.name }}</h5>
+                        {% if tag.parent %}
+                            <div class="card-subtitle mb-2 text-muted">
+                                父标签: {{ tag.parent.name }}
+                            </div>
+                        {% endif %}
+                        <div class="d-flex align-items-center mt-3">
+                            {% if tag.is_base_tag %}
+                                <span class="badge bg-primary me-2">基础类</span>
+                            {% elif tag.is_preset_tag %}
+                                <span class="badge bg-success me-2">预设</span>
+                            {% else %}
+                                <span class="badge bg-secondary me-2">自定义</span>
+                            {% endif %}
+                            
+                            <div class="ms-auto">
+                                <a href="{{ url_for('filter_files', tag=tag.name) }}" class="btn btn-sm btn-outline-primary me-1">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                {% if not tag.is_base_tag %}
+                                <button type="button" class="btn btn-sm btn-outline-danger" 
+                                        onclick="confirmDeleteTag('{{ tag.name }}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="alert alert-secondary">
+        <i class="fas fa-info-circle me-2"></i>暂无标签。
+        <a href="{{ url_for('create_tag') }}" class="alert-link">创建您的第一个标签</a>
+    </div>
+{% endif %}
+
+<div class="mt-4">
+    <h3>标签继承关系</h3>
+    <p class="text-muted">标签具有继承关系，子标签会继承父标签的属性。例如，"JCTC文献"是"科研文献"的子类。</p>
+    
+    {% if tags %}
+        <div class="card">
+            <div class="card-body">
+                <div id="tagHierarchy"></div>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Delete Tag Confirmation Modal -->
+<div class="modal fade" id="deleteTagModal" tabindex="-1" aria-labelledby="deleteTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteTagModalLabel">确认删除标签</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                确定要删除标签 <strong id="tagNameToDelete"></strong> 吗？此操作不可撤销，且可能影响使用此标签的文件。
+                <div id="presetWarning" class="alert alert-warning mt-2" style="display: none;">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    这是一个预设标签。删除后可以通过"恢复预设标签"按钮恢复。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form id="deleteTagForm" method="post" action="">
+                    <button type="submit" class="btn btn-danger">删除</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if tags %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Build tag hierarchy
+        const tagHierarchy = document.getElementById('tagHierarchy');
+        
+        // Create map of tags
+        const tagMap = {};
+        const rootTags = [];
+        
+        {% for tag in tags %}
+            tagMap["{{ tag.name }}"] = {
+                name: "{{ tag.name }}",
+                parent: {% if tag.parent %}"{{ tag.parent.name }}"{% else %}null{% endif %},
+                children: [],
+                isBaseTag: {% if tag.is_base_tag %}true{% else %}false{% endif %},
+                isPresetTag: {% if tag.is_preset_tag %}true{% else %}false{% endif %}
+            };
+            
+            if ({% if tag.parent %}false{% else %}true{% endif %}) {
+                rootTags.push("{{ tag.name }}");
+            }
+        {% endfor %}
+        
+        // Build hierarchy
+        {% for tag in tags %}
+            if (tagMap["{{ tag.name }}"].parent) {
+                tagMap[tagMap["{{ tag.name }}"].parent].children.push("{{ tag.name }}");
+            }
+        {% endfor %}
+        
+        // Render hierarchy
+        function renderHierarchy(tagName, level = 0) {
+            const tag = tagMap[tagName];
+            const item = document.createElement('div');
+            item.className = 'tag-item';
+            item.style.paddingLeft = (level * 20) + 'px';
+            
+            // Add tag type badge
+            let tagBadge = '';
+            if (tag.isBaseTag) {
+                tagBadge = '<span class="badge bg-primary me-2">基础类</span>';
+            } else if (tag.isPresetTag) {
+                tagBadge = '<span class="badge bg-success me-2">预设</span>';
+            } else {
+                tagBadge = '<span class="badge bg-secondary me-2">自定义</span>';
+            }
+            
+            item.innerHTML = `
+                <span class="tag-name">
+                    <i class="fas ${tag.children.length ? 'fa-folder' : 'fa-tag'} me-2"></i>
+                    ${tag.name} ${tagBadge}
+                </span>
+                <a href="{{ url_for('filter_files') }}?tag=${tag.name}" class="text-muted small">
+                    查看文件
+                </a>
+            `;
+            item.style.marginBottom = '8px';
+            tagHierarchy.appendChild(item);
+            
+            // Render children
+            tag.children.forEach(child => {
+                renderHierarchy(child, level + 1);
+            });
+        }
+        
+        rootTags.forEach(rootTag => {
+            renderHierarchy(rootTag);
+        });
+    });
+    
+    function confirmDeleteTag(tagName) {
+        document.getElementById('tagNameToDelete').textContent = tagName;
+        document.getElementById('deleteTagForm').action = "/tags/" + encodeURIComponent(tagName) + "/delete";
+        
+        // 检查是否是预设标签，显示提示
+        const isPreset = {% for tag in tags %}
+            {% if tag.is_preset_tag %}(tagName === "{{ tag.name }}") || {% endif %}
+        {% endfor %} false;
+        
+        document.getElementById('presetWarning').style.display = isPreset ? 'block' : 'none';
+        
+        var deleteModal = new bootstrap.Modal(document.getElementById('deleteTagModal'));
+        deleteModal.show();
+    }
+</script>
+{% endif %}
+{% endblock %} 

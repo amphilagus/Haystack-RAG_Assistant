@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - 创建标签{% endblock %}
+
+{% block header %}创建标签{% endblock %}
+{% block subheader %}添加新标签到系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <form method="post">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">标签名称</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                        <div class="form-text">标签名称应该简洁明了。</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="parent" class="form-label">父标签 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="parent" name="parent" required>
+                            <option value="">请选择一个基础类标签</option>
+                            {% for tag in base_tags %}
+                                <option value="{{ tag.name }}">{{ tag.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">所有自定义标签必须属于一个基础类标签。</div>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('list_tags') }}" class="btn btn-outline-secondary me-md-2">取消</a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-plus me-1"></i>创建标签
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <h3>标签继承说明</h3>
+    <div class="card">
+        <div class="card-body">
+            <p>标签支持继承关系，可以构建层次化的分类体系：</p>
+            <ul>
+                <li>子标签会继承父标签的属性</li>
+                <li>查询父标签时，默认会包含子标签的文件</li>
+                <li>所有自定义标签必须是基础类标签的子标签</li>
+            </ul>
+            
+            <div class="mt-3">
+                <h5>系统提供的基础类标签：</h5>
+                <div class="row">
+                    {% for tag in base_tags %}
+                        <div class="col-md-6 mb-2">
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-success me-2">基础类</span>
+                                <strong>{{ tag.name }}</strong>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div class="mt-3">
+                <h5>示例：</h5>
+                <ul>
+                    <li>基础类: <span class="badge bg-success">期刊类型</span> → 子标签: <span class="badge bg-info">JCTC</span>, <span class="badge bg-info">Nature</span></li>
+                    <li>基础类: <span class="badge bg-success">研究领域</span> → 子标签: <span class="badge bg-info">量子化学</span>, <span class="badge bg-info">分子动力学</span></li>
+                    <li>基础类: <span class="badge bg-success">发表时间</span> → 子标签: <span class="badge bg-info">2023年</span>, <span class="badge bg-info">2022年</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

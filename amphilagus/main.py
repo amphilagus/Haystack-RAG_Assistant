@@ -31,7 +31,8 @@ class Amphilagus:
         
     # Raw data management methods
     
-    def add_raw_data(self, file_path: Union[str, Path], tags: List[str] = None, 
+    def add_raw_data(self, file_path: Union[str, Path], backup_file_path: Union[str, Path],
+                     tags: List[str] = None, 
                     description: str = "", additional_info: Dict[str, Any] = None) -> str:
         """
         Add a raw data file with optional tags and metadata.
@@ -47,6 +48,7 @@ class Amphilagus:
         """
         return self.file_manager.add_file(
             file_path, 
+            backup_file_path,
             tags=tags, 
             description=description,
             additional_info=additional_info

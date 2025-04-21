@@ -28,10 +28,49 @@ from .database_manager import DatabaseManager
 try:
     from rag_assistant.utils.pdf_converter.pdf_to_markdown import convert_pdf_to_markdown
     from rag_assistant.document_loader import load_documents
+    from rag_assistant.rag_pipeline import RAGPipeline
+    from rag_assistant.collection_metadata import get_embedding_model
+    from dotenv import load_dotenv
     RAG_IMPORT_SUCCESS = True
 except ImportError:
     print("Warning: RAG Assistant modules not found. Vector database functions will be limited.")
     RAG_IMPORT_SUCCESS = False
+
+# 获取API密钥的函数
+def get_api_key():
+    """
+    Try to get API key from various sources
+    
+    Returns:
+        API key or None
+    """
+    # Try from environment variables
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        return api_key
+    
+    # Try to load from .env file
+    load_dotenv(override=True)
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        return api_key
+    
+    # Try to read directly from .env file
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        env_path = os.path.join(current_dir, '.env')
+        if os.path.isfile(env_path):
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.startswith('OPENAI_API_KEY'):
+                        api_key = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        # Manually set environment variable
+                        os.environ["OPENAI_API_KEY"] = api_key
+                        return api_key
+    except Exception as e:
+        print(f"Error reading .env file directly: {e}")
+    
+    return None
 
 # 配置路径 - 正确的配置文件路径
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
@@ -180,7 +219,275 @@ def before_request():
     # 延迟初始化任务管理器，确保amphilagus实例已经初始化
     if task_manager is None:
         task_manager = TaskManager.get_instance(amphilagus=amphilagus)
+    
+    # 配置默认日期格式
+    if 'datetime' not in app.jinja_env.filters:
+        app.jinja_env.filters['datetime'] = datetime.datetime.strftime
 
+# RAG Assistant 相关路由
+
+# 初始化会话状态
+if 'rag_session' not in app.config:
+    app.config['rag_session'] = {
+        'messages': [],
+        'query_history': [],
+        'chat_history': [],
+        'result_history': [],
+        'last_retrieval_score': 0,
+        'last_result': None,
+        'document_store': app.config.get('DOCUMENT_STORE', 'inmemory'),
+        'embedding_model': None,
+        'llm_model': None,
+        'prompt_template': 'balanced',
+        'top_k': 10  # 默认top_k值
+    }
+
+@app.route('/rag_assistant')
+def rag_assistant():
+    """RAG Assistant页面路由"""
+    if not RAG_IMPORT_SUCCESS:
+        flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
+        return redirect(url_for('index'))
+    
+    # 检查环境变量中是否有API密钥
+    api_key = get_api_key()
+    if not api_key:
+        flash('未找到环境变量中的OpenAI API密钥，请设置OPENAI_API_KEY环境变量', 'warning')
+    
+    # 获取可用集合
+    collections = db_manager.list_collections()
+    collection_names = [col["name"] for col in collections if col.get("exists_in_chroma", False)]
+    
+    # 获取当前集合信息
+    current_collection = app.config['rag_session'].get('collection_name', 'documents')
+    collection_info = None
+    
+    if current_collection in collection_names:
+        try:
+            chroma_client = db_manager.client
+            if chroma_client:
+                collection = chroma_client.get_collection(current_collection)
+                collection_info = {"exists": True, "count": collection.count()}
+        except Exception as e:
+            app.logger.error(f"获取集合信息时出错: {str(e)}")
+            collection_info = {"exists": False, "count": 0, "error": str(e)}
+    
+    # 准备模板变量
+    template_vars = {
+        'collections': collection_names,
+        'current_collection': current_collection,
+        'collection_info': collection_info,
+        'current_model': app.config['rag_session'].get('current_model', 'gpt-4o-mini'),
+        'current_template': app.config['rag_session'].get('prompt_template', 'balanced'),
+        'top_k': app.config['rag_session'].get('top_k', 10),
+        'chat_history': app.config['rag_session'].get('chat_history', []),
+        'initialized': app.config['rag_session'].get('initialized', False)
+    }
+    
+    return render_template('rag_assistant.html', **template_vars)
+
+@app.route('/rag_assistant/config', methods=['POST'])
+def rag_assistant_config():
+    """处理RAG Assistant配置更新"""
+    if not RAG_IMPORT_SUCCESS:
+        flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
+        return redirect(url_for('rag_assistant'))
+    
+    # 检查环境变量中是否有API密钥
+    api_key = get_api_key()
+    if not api_key:
+        flash('未找到环境变量中的OpenAI API密钥，请设置OPENAI_API_KEY环境变量', 'error')
+        return redirect(url_for('rag_assistant'))
+    
+    # 获取表单数据
+    collection_name = request.form.get('collection_name', 'documents')
+    llm_model = request.form.get('llm_model', 'gpt-4o-mini')
+    prompt_template = request.form.get('prompt_template', 'balanced')
+    
+    try:
+        # 获取正确的嵌入模型
+        embedding_model = get_embedding_model(collection_name)
+        if not embedding_model:
+            embedding_model = "sentence-transformers/all-MiniLM-L6-v2"  # 默认嵌入模型
+        
+        # 检查模型和模板是否更改
+        model_changed = app.config['rag_session'].get('current_model') != llm_model
+        template_changed = app.config['rag_session'].get('prompt_template') != prompt_template
+        
+        # 初始化RAG管道 - 使用默认top_k
+        rag_pipeline = RAGPipeline(
+            embedding_model=embedding_model,
+            llm_model=llm_model,
+            persist_dir=CHROMA_DB_PATH,
+            collection_name=collection_name,
+            prompt_template=prompt_template
+        )
+        
+        # 更新会话状态
+        app.config['rag_session']['rag_pipeline'] = rag_pipeline
+        app.config['rag_session']['current_model'] = llm_model
+        app.config['rag_session']['prompt_template'] = prompt_template
+        app.config['rag_session']['collection_name'] = collection_name
+        app.config['rag_session']['top_k'] = 10  # 设置默认top_k值
+        app.config['rag_session']['initialized'] = True
+        
+        # 获取模型信息
+        model_intro = rag_pipeline.get_model_introduction() if hasattr(rag_pipeline, 'get_model_introduction') else ""
+        template_info = rag_pipeline.get_current_template_info() if hasattr(rag_pipeline, 'get_current_template_info') else {"name": prompt_template}
+        
+        # 构建成功消息
+        message = ""
+        if model_changed:
+            message += f"模型已切换为 {llm_model}。"
+        if template_changed:
+            message += f"提示词模板已切换为{template_info.get('name', prompt_template)}。"
+        
+        if message:
+            flash(message + model_intro, 'success')
+        else:
+            flash(f"RAG助手已成功初始化，使用{llm_model}模型和{template_info.get('name', prompt_template)}模板。{model_intro}", 'success')
+        
+    except Exception as e:
+        app.logger.error(f"初始化RAG管道时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        flash(f'初始化RAG助手时出错: {str(e)}', 'error')
+    
+    return redirect(url_for('rag_assistant'))
+
+def find_backup_file_by_title(title):
+    """
+    通过标题查找backup_data文件夹中可能匹配的文件
+    
+    Args:
+        title: 文档标题
+        
+    Returns:
+        找到的文件名（如果存在），否则返回None
+    """
+    # 构建备份数据文件夹路径
+    backup_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backup_data')
+    
+    # 如果目录不存在，返回None
+    if not os.path.exists(backup_dir):
+        return None
+    
+    # 将标题转换为可能的文件名模式（移除特殊字符）
+    import re
+    title_pattern = re.sub(r'[^\w\s-]', '', title).strip().replace(' ', '_')
+    
+    # 查找匹配的文件
+    matching_files = []
+    for filename in os.listdir(backup_dir):
+        file_base = os.path.splitext(filename)[0]
+        # 两种匹配方式：1. 正则表达式模糊匹配 2. 标题是文件名的一部分
+        if (re.search(title_pattern, file_base, re.IGNORECASE) or 
+            title.lower() in file_base.lower().replace('_', ' ')):
+            matching_files.append(filename)
+    
+    # 如果找到匹配的文件，返回第一个
+    if matching_files:
+        return matching_files[0]
+    
+    return None
+
+@app.route('/rag_assistant/chat', methods=['POST'])
+def rag_assistant_chat():
+    """处理RAG Assistant聊天请求"""
+    if not RAG_IMPORT_SUCCESS:
+        flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
+        return redirect(url_for('rag_assistant'))
+    
+    # 检查是否已初始化
+    if not app.config['rag_session'].get('initialized', False) or app.config['rag_session'].get('rag_pipeline') is None:
+        flash('请先初始化RAG助手', 'warning')
+        return redirect(url_for('rag_assistant'))
+    
+    # 获取用户查询
+    user_query = request.form.get('user_query', '').strip()
+    if not user_query:
+        flash('请输入有效的问题', 'warning')
+        return redirect(url_for('rag_assistant'))
+    
+    try:
+        # 从表单获取top_k参数
+        try:
+            top_k = int(request.form.get('top_k', 10))
+            if top_k < 1:
+                top_k = 1
+            elif top_k > 100:
+                top_k = 100
+        except (ValueError, TypeError):
+            # 如果解析出错，使用默认值
+            top_k = app.config['rag_session'].get('top_k', 10)
+        
+        # 获取是否显示参考文献的选项
+        include_references = request.form.get('include_references') == 'on'
+        
+        # 记录用户消息
+        user_message = {
+            "role": "user",
+            "content": user_query,
+            "timestamp": datetime.datetime.now()
+        }
+        app.config['rag_session']['chat_history'].append(user_message)
+        
+        # 获取rag_pipeline
+        rag_pipeline = app.config['rag_session']['rag_pipeline']
+        
+        # 生成回答，传递top_k和include_references参数
+        result = rag_pipeline.get_answer(user_query, top_k=top_k, include_references=include_references)
+        
+        # 处理结果
+        if isinstance(result, dict) and include_references:
+            answer = result.get("answer", "")
+            references = result.get("references", [])
+            
+            # 构建包含参考文献和链接的回答
+            if references:
+                references_html = "<br><br><hr><small><strong>参考文献:</strong><br>"
+                for i, ref in enumerate(references, 1):
+                    # 查找匹配的备份文件
+                    backup_file = find_backup_file_by_title(ref)
+                    if backup_file:
+                        # 创建链接到备份文件
+                        references_html += f'{i}. <a href="{url_for("view_backup_file", filename=backup_file)}" target="_blank">{ref}</a><br>'
+                    else:
+                        references_html += f"{i}. {ref}<br>"
+                references_html += "</small>"
+                answer_with_info = f"{answer}{references_html}<br><small class='text-muted'>检索文档数: {top_k}</small>"
+            else:
+                answer_with_info = f"{answer}<br><br><small class='text-muted'>检索文档数: {top_k}</small>"
+        else:
+            # 如果不包含参考文献或结果不是字典
+            answer = result if isinstance(result, str) else "无法生成回答"
+            answer_with_info = f"{answer}<br><br><small class='text-muted'>检索文档数: {top_k}</small>"
+        
+        # 记录助手消息
+        assistant_message = {
+            "role": "assistant",
+            "content": answer_with_info,
+            "template": app.config['rag_session']['prompt_template'],
+            "timestamp": datetime.datetime.now(),
+            "top_k": top_k,  # 同时记录top_k值
+            "include_references": include_references  # 记录是否包含参考文献
+        }
+        app.config['rag_session']['chat_history'].append(assistant_message)
+        
+    except Exception as e:
+        app.logger.error(f"生成回答时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        flash(f'生成回答时出错: {str(e)}', 'error')
+    
+    return redirect(url_for('rag_assistant'))
+
+@app.route('/rag_assistant/clear', methods=['POST'])
+def rag_assistant_clear():
+    """清空聊天历史"""
+    app.config['rag_session']['chat_history'] = []
+    flash('聊天历史已清空', 'success')
+    return redirect(url_for('rag_assistant'))
 
 @app.route('/')
 def index():
@@ -358,14 +665,52 @@ def manage_file_tags(filename):
 
 @app.route('/files/<filename>/details')
 def file_details(filename):
-    """Show file details."""
+    """通过重定向在新页面查看文件"""
     file_metadata = amphilagus.get_raw_data_metadata(filename)
     
     if not file_metadata:
-        flash(f'File {filename} not found')
+        flash(f'文件 {filename} 不存在')
         return redirect(url_for('list_files'))
     
-    return render_template('file_details.html', file=file_metadata)
+    # 重定向到新的文件查看页面路由
+    return redirect(url_for('view_backup_file', filename=filename))
+
+@app.route('/files/<filename>/view')
+def view_backup_file(filename):
+    """在新页面中查看备份文件"""
+    # 构建备份数据文件夹路径
+    backup_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backup_data')
+    
+    # 获取文件名（不含扩展名）
+    filename_no_ext = os.path.splitext(filename)[0]
+    
+    # 查找同名文件（可能有不同的扩展名）
+    matching_files = []
+    if os.path.exists(backup_dir):
+        for f in os.listdir(backup_dir):
+            if os.path.splitext(f)[0] == filename_no_ext:
+                matching_files.append(f)
+    
+    # 如果找到多个文件，报错
+    if len(matching_files) > 1:
+        flash(f'在backup_data中找到多个同名文件: {", ".join(matching_files)}', 'error')
+        return redirect(url_for('list_files'))
+    
+    # 如果没有找到文件，显示错误
+    if not matching_files:
+        flash(f'在backup_data中未找到{filename_no_ext}的文件', 'error')
+        return redirect(url_for('list_files'))
+    
+    # 构建完整文件路径
+    file_path = os.path.join(backup_dir, matching_files[0])
+    backup_filename = matching_files[0]
+    
+    # 发送文件
+    try:
+        return send_file(file_path, as_attachment=False)
+    except Exception as e:
+        flash(f'打开文件时出错: {str(e)}', 'error')
+        return redirect(url_for('list_files'))
 
 
 @app.route('/files/<filename>/update_description', methods=['POST'])

@@ -336,7 +336,7 @@ class TaskManager:
 
                         # 添加到数据库
                         md_description = description or f"由PDF文件自动转换生成{'，已进行内容清理' if clean_md else ''}"
-                        add_result = self.amphilagus.add_raw_data(md_file_path, tags, md_description)
+                        add_result = self.amphilagus.add_raw_data(md_file_path, temp_path, tags, md_description)
                         
                         if add_result:
                             results['success'].append({

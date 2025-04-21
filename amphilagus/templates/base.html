@@ -48,6 +48,11 @@
                             <i class="fas fa-database me-1"></i>数据库
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('rag_assistant') }}">
+                            <i class="fas fa-robot me-1"></i>RAG 助手
+                        </a>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -65,10 +70,10 @@
             {% endif %}
         {% endwith %}
 
-        <div class="mb-4">
-            <h1 class="display-5">{% block header %}Amphilagus{% endblock %}</h1>
-            <p class="lead text-secondary">{% block subheader %}文件标签化管理系统{% endblock %}</p>
-            <hr>
+        <div class="mb-2">
+            <h1 class="fs-3 mb-1">{% block header %}Amphilagus{% endblock %}</h1>
+            <p class="text-secondary small mb-2">{% block subheader %}文件标签化管理系统{% endblock %}</p>
+            <hr class="mt-2 mb-3">
         </div>
 
         {% block content %}{% endblock %}

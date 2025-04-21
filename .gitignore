@@ -34,6 +34,7 @@ env/
 # RAG Project Specific
 raw_data/
 raw_data_backup/
+backup_data/
 results/
 tasks/
 chroma_db/

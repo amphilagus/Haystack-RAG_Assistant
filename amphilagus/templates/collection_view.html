@@ -353,17 +353,25 @@
                 <h5 class="modal-title" id="deleteCollectionModalLabel">确认删除集合</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <p class="text-danger">警告：此操作将永久删除 <strong>{{ collection.name }}</strong> 集合及其所有文档！</p>
-                <p>此操作不可撤销。请输入集合名称以确认删除：</p>
-                <input type="text" class="form-control" id="confirmCollectionName" placeholder="输入集合名称确认">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <form action="{{ url_for('delete_collection', collection_name=collection.name) }}" method="post">
-                    <button type="submit" class="btn btn-danger" id="deleteCollectionButton" disabled>删除集合</button>
-                </form>
-            </div>
+            <form action="{{ url_for('delete_collection', collection_name=collection.name) }}" method="post" id="deleteForm">
+                <div class="modal-body">
+                    <p class="text-danger">警告：此操作将永久删除 <strong>{{ collection.name }}</strong> 集合及其所有文档！</p>
+                    <p>此操作不可撤销。请输入集合名称以确认删除：</p>
+                    <div class="mb-3">
+                        <input type="text" class="form-control" id="confirmCollectionName" 
+                               placeholder="输入集合名称确认" autocomplete="off">
+                        <div class="form-text text-danger" id="nameMatchError" style="display: none;">
+                            集合名称不匹配，请输入正确的名称
+                        </div>
+                    </div>
+                    <!-- 隐藏的确认字段，会被JavaScript设置 -->
+                    <input type="hidden" name="confirmed" id="confirmedField" value="false">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" onclick="confirmDelete()" class="btn btn-danger">删除集合</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -373,24 +381,42 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // 初始化 DataTable
-        let table = new DataTable('#documentsTable', {
-            "language": {
-                "url": "//cdn.datatables.net/plug-ins/1.10.25/i18n/Chinese.json"
-            },
-            "pageLength": 10,
-            "ordering": true,
-            "order": [[0, 'asc']]
-        });
-        
-        // 删除集合确认
-        const confirmCollectionName = document.getElementById('confirmCollectionName');
-        const deleteCollectionButton = document.getElementById('deleteCollectionButton');
-        
-        if (confirmCollectionName && deleteCollectionButton) {
-            confirmCollectionName.addEventListener('input', function() {
-                deleteCollectionButton.disabled = this.value !== '{{ collection.name }}';
+        try {
+            let table = new DataTable('#documentsTable', {
+                "language": {
+                    "url": "//cdn.datatables.net/plug-ins/1.10.25/i18n/Chinese.json"
+                },
+                "pageLength": 10,
+                "ordering": true,
+                "order": [[0, 'asc']]
             });
+        } catch (e) {
+            console.log('DataTable初始化错误:', e);
         }
+    });
+    
+    // 简化的删除确认函数
+    function confirmDelete() {
+        const confirmInput = document.getElementById('confirmCollectionName');
+        const errorMsg = document.getElementById('nameMatchError');
+        const confirmedField = document.getElementById('confirmedField');
+        const form = document.getElementById('deleteForm');
+        
+        // 名称匹配检查
+        if (confirmInput.value === '{{ collection.name }}') {
+            confirmedField.value = 'true';
+            form.submit();
+        } else {
+            // 显示错误
+            errorMsg.style.display = 'block';
+            confirmInput.classList.add('is-invalid');
+        }
+    }
+    
+    // 重置错误状态
+    document.getElementById('confirmCollectionName').addEventListener('input', function() {
+        this.classList.remove('is-invalid');
+        document.getElementById('nameMatchError').style.display = 'none';
     });
 </script>
 {% endblock %} 

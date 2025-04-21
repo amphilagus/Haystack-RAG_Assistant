@@ -305,7 +305,8 @@ class RAGPipeline:
             results = self.current_pipeline.run({
                 "text_embedder": {"text": query},
                 "prompt_builder": {"question": query}
-            })
+            },
+            include_outputs_from={"retriever", "llm"})
             return results
         except Exception as e:
             try:
@@ -539,15 +540,17 @@ class RAGPipeline:
         # ChromaDocumentStore with persist_path automatically persists data
         print("Documents are automatically persisted in ChromaDocumentStore")
 
-    def get_answer(self, query: str) -> str:
+    def get_answer(self, query: str, top_k: int = None, include_references: bool = False) -> str:
         """
         Get an answer for a query using the RAG pipeline.
         
         Args:
             query: The user question
+            top_k: Optional, number of documents to retrieve, overrides the default setting
+            include_references: If True, returns a dict with answer and references, otherwise returns just the answer string
             
         Returns:
-            The generated answer
+            The generated answer (str) or a dict containing answer and references if include_references=True
         """
         # Show model introduction if this is the first query
         if not hasattr(self, '_shown_introduction'):
@@ -557,18 +560,88 @@ class RAGPipeline:
             
         # Run the pipeline
         try:
-            results = self.run(query)
-            # OpenAIChatGenerator返回responses而不是replies
+            # 使用run_batch而不是run，以便传递top_k参数
+            query_config = {
+                "query": query,
+                "mode": "run"
+            }
+            
+            # 如果提供了top_k参数，添加到配置中
+            if top_k is not None:
+                query_config["top_k"] = top_k
+                
+            # 执行查询
+            batch_results = self.run_batch([query_config])
+            
+            if not batch_results:
+                return "Sorry, I couldn't generate an answer." if not include_references else {
+                    "answer": "Sorry, I couldn't generate an answer.",
+                    "references": []
+                }
+                
+            results = batch_results[0]
+            
+            # 提取answer
+            answer = "Sorry, I couldn't generate an answer."
             if results and "llm" in results:
                 if "responses" in results["llm"]:
                     # 获取第一个响应的内容
-                    return results["llm"]["responses"][0].content
+                    answer = results["llm"]["responses"][0].content
                 elif "replies" in results["llm"]:  # 兼容旧版本
-                    return results["llm"]["replies"][0].text
-            return "Sorry, I couldn't generate an answer."
+                    answer = results["llm"]["replies"][0].text
+            
+            # 如果不需要参考文献，直接返回答案
+            if not include_references:
+                return answer
+                
+            # 处理参考文献
+            references = []
+            if results and "retriever" in results and "documents" in results["retriever"]:
+                documents = results["retriever"]["documents"]
+                
+                # 按标题分组
+                title_groups = {}
+                for doc in documents:
+                    if doc.meta and "title" in doc.meta:
+                        title = doc.meta["title"]
+                        score = getattr(doc, "score", 0)  # 获取score，如果没有则默认为0
+                        
+                        if title not in title_groups:
+                            title_groups[title] = []
+                            
+                        title_groups[title].append({
+                            "score": score,
+                            "doc": doc
+                        })
+                
+                # 找出每个标题下的最高得分
+                title_scores = []
+                for title, docs in title_groups.items():
+                    max_score_doc = max(docs, key=lambda x: x["score"]) if docs else {"score": 0}
+                    title_scores.append({
+                        "title": title,
+                        "score": max_score_doc["score"]
+                    })
+                
+                # 按得分从高到低排序
+                title_scores.sort(key=lambda x: x["score"], reverse=True)
+                
+                # 提取排序后的标题列表
+                references = [item["title"] for item in title_scores]
+            
+            # 返回带参考文献的结果
+            return {
+                "answer": answer,
+                "references": references
+            }
+            
         except Exception as e:
             print(f"Error generating answer: {e}")
-            return f"Error: {str(e)}"
+            error_msg = f"Error: {str(e)}"
+            return error_msg if not include_references else {
+                "answer": error_msg,
+                "references": []
+            }
     
     def get_model_introduction(self) -> str:
         """

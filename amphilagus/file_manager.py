@@ -80,15 +80,17 @@ class FileManager:
     """
     Manages raw_data files with a tag-based system.
     """
-    def __init__(self, raw_data_dir: str = 'raw_data', metadata_file: str = 'raw_data_metadata.json'):
+    def __init__(self, raw_data_dir: str = 'raw_data', metadata_file: str = 'raw_data_metadata.json',
+                 backup_data_dir: str = 'backup_data'):
         self.raw_data_dir = Path(raw_data_dir)
+        self.backup_data_dir = Path(backup_data_dir)
         self.metadata_file = self.raw_data_dir / metadata_file
         self.metadata: Dict[str, Metadata] = {}
         self.tag_registry: Dict[str, Tag] = {}
         
         # Create raw_data directory if it doesn't exist
         os.makedirs(self.raw_data_dir, exist_ok=True)
-        
+        os.makedirs(self.backup_data_dir, exist_ok=True)
         # Load metadata if file exists
         if os.path.exists(self.metadata_file):
             self._load_metadata()
@@ -220,13 +222,14 @@ class FileManager:
         """List all available tags."""
         return list(self.tag_registry.values())
     
-    def add_file(self, file_path: Union[str, Path], tags: List[str] = None, 
+    def add_file(self, file_path: Union[str, Path], backup_file_path: Union[str, Path], tags: List[str] = None, 
                 description: str = "", additional_info: Dict[str, Any] = None) -> str:
         """
         Add a file to raw_data with optional tags and metadata.
         
         Args:
             file_path: Path to the file to add
+            backup_file_path: Path to the backup file to add
             tags: List of tag names to apply to the file
             description: Description of the file
             additional_info: Additional metadata as key-value pairs
@@ -235,12 +238,15 @@ class FileManager:
             The filename of the added file
         """
         file_path = Path(file_path)
+        backup_file_path = Path(backup_file_path)
         if not file_path.exists():
             raise FileNotFoundError(f"File {file_path} does not exist")
         
         # Copy file to raw_data directory
         destination = self.raw_data_dir / file_path.name
         shutil.copy2(file_path, destination)
+        description_backup = self.backup_data_dir / (file_path.name.split('.')[0] + '.' + backup_file_path.name.split('.')[-1])
+        shutil.copy2(backup_file_path, description_backup)
         
         # Create metadata
         tag_objects = set()

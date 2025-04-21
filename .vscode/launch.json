@@ -237,6 +237,18 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "Test - Pipeline Results",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/test_pipeline_results.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "PyTest - Current File",
             "type": "python",
             "request": "launch",

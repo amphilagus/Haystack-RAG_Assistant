@@ -174,6 +174,8 @@ class TaskManager:
             # 根据任务类型处理
             if task.task_type == 'file_upload':
                 self._process_file_upload_task(task)
+            elif task.task_type == 'batch_embed':
+                self._process_batch_embed_task(task)
             else:
                 task.error = f"未知任务类型: {task.task_type}"
                 task.status = Task.STATUS_FAILED
@@ -400,6 +402,63 @@ class TaskManager:
             "error_count": len(results['error']),
             "details": results
         }
+
+    def _process_batch_embed_task(self, task):
+        """处理批量嵌入任务"""
+        # 导入依赖项
+        from .web_app import app, db_manager
+        
+        # 获取任务参数
+        collection_name = task.params.get('collection_name')
+        chunk_size = task.params.get('chunk_size', 1000)
+        chunk_overlap = task.params.get('chunk_overlap', 200)
+        check_duplicates = task.params.get('check_duplicates', False)
+        file_paths = task.params.get('file_paths', [])
+        
+        if not collection_name:
+            task.error = "未指定集合名称"
+            task.status = Task.STATUS_FAILED
+            return
+            
+        if not file_paths:
+            task.error = "未指定文件路径"
+            task.status = Task.STATUS_FAILED
+            return
+        
+        # 更新进度
+        task.progress = 10
+        self._save_tasks()
+        
+        try:
+            # 调用数据库管理器的embed_files方法处理嵌入
+            success, message, stats = db_manager.embed_files(
+                collection_name=collection_name,
+                file_paths=file_paths,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                check_duplicates=check_duplicates
+            )
+            
+            # 更新进度
+            task.progress = 90
+            self._save_tasks()
+            
+            # 设置任务结果
+            task.result = {
+                "success": success,
+                "message": message,
+                "stats": stats
+            }
+            
+            # 如果失败，设置错误信息
+            if not success:
+                task.error = message
+                task.status = Task.STATUS_FAILED
+                
+        except Exception as e:
+            logger.error(f"批量嵌入任务处理失败: {str(e)}")
+            task.error = f"批量嵌入任务处理失败: {str(e)}"
+            task.status = Task.STATUS_FAILED
 
     
     def create_task(self, task_type, files=None, params=None):

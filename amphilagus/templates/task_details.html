@@ -141,7 +141,7 @@
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
-            <li class="breadcrumb-item"><a href="{{ url_for('view_tasks') }}">上传任务管理</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('view_tasks') }}">后台任务管理</a></li>
             <li class="breadcrumb-item active" aria-current="page">任务详情</li>
         </ol>
     </nav>
@@ -162,6 +162,8 @@
             <h1>
                 {% if task.task_type == 'file_upload' %}
                 <i class="fas fa-file-upload"></i> 文件上传任务
+                {% elif task.task_type == 'batch_embed' %}
+                <i class="fas fa-database"></i> 批量嵌入任务
                 {% else %}
                 <i class="fas fa-tasks"></i> {{ task.task_type }}
                 {% endif %}
@@ -248,9 +250,28 @@
                     <dt class="col-sm-3">标签</dt>
                     <dd class="col-sm-9">
                         {% for tag in task.params.tags %}
-                        <span class="badge bg-secondary me-1">{{ tag }}</span>
+                            <span class="badge bg-primary">{{ tag }}</span>
                         {% endfor %}
                     </dd>
+                    {% endif %}
+                    
+                    {% if task.task_type == 'batch_embed' %}
+                    <dt class="col-sm-3">集合名称</dt>
+                    <dd class="col-sm-9">{{ task.params.collection_name }}</dd>
+                    
+                    <dt class="col-sm-3">文档切片大小</dt>
+                    <dd class="col-sm-9">{{ task.params.chunk_size }}</dd>
+                    
+                    <dt class="col-sm-3">切片重叠大小</dt>
+                    <dd class="col-sm-9">{{ task.params.chunk_overlap }}</dd>
+                    
+                    <dt class="col-sm-3">检查重复文档</dt>
+                    <dd class="col-sm-9">{{ '是' if task.params.check_duplicates else '否' }}</dd>
+                    {% endif %}
+                    
+                    {% if task.params.use_llm == 'on' %}
+                    <dt class="col-sm-3">使用LLM</dt>
+                    <dd class="col-sm-9">{{ '是' if task.params.use_llm == 'on' else '否' }}</dd>
                     {% endif %}
                 </dl>
             </div>
@@ -285,79 +306,107 @@
     <div class="task-section">
         <h2 class="task-section-title">处理结果</h2>
         
-        {% if task.result and task.result.details %}
+        {% if task.error %}
+        <div class="alert alert-danger">
+            <strong>错误: </strong> {{ task.error }}
+        </div>
+        {% endif %}
         
-        <!-- 结果统计 -->
+        {% if task.task_type == 'file_upload' and task.result %}
+        <!-- 文件上传结果 -->
         <div class="results-summary">
             <div class="result-stat result-stat-total">
-                <div class="result-number">{{ task.result.total }}</div>
+                <div class="result-number">{{ task.result.total_count|default(0) }}</div>
                 <div class="result-label">总文件数</div>
             </div>
             <div class="result-stat result-stat-success">
-                <div class="result-number">{{ task.result.success_count }}</div>
-                <div class="result-label">成功处理</div>
+                <div class="result-number">{{ task.result.success_count|default(0) }}</div>
+                <div class="result-label">成功数</div>
             </div>
             <div class="result-stat result-stat-error">
-                <div class="result-number">{{ task.result.error_count }}</div>
-                <div class="result-label">处理失败</div>
+                <div class="result-number">{{ task.result.error_count|default(0) }}</div>
+                <div class="result-label">失败数</div>
             </div>
         </div>
         
-        <!-- 成功列表 -->
-        {% if task.result.details.success %}
-        <h3 class="h5 mt-4 mb-3">成功处理的文件</h3>
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th>文件名</th>
-                    <th>处理结果</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in task.result.details.success %}
-                <tr>
-                    <td>{{ item.filename }}</td>
-                    <td>{{ item.message }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        {% if task.result.details and task.result.details.success %}
+        <h4>成功处理的文件</h4>
+        <ul class="list-group mb-4">
+            {% for item in task.result.details.success %}
+            <li class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="fas fa-check-circle text-success me-2"></i>
+                        {{ item.filename }}
+                    </div>
+                    <a href="{{ url_for('file_details', filename=item.filename) }}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-eye"></i> 查看
+                    </a>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
         {% endif %}
         
-        <!-- 失败列表 -->
-        {% if task.result.details.error %}
-        <h3 class="h5 mt-4 mb-3">处理失败的文件</h3>
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th>文件名</th>
-                    <th>错误信息</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in task.result.details.error %}
-                <tr>
-                    <td>{{ item.filename }}</td>
-                    <td class="text-danger">{{ item.message }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        {% if task.result.details and task.result.details.error %}
+        <h4>处理失败的文件</h4>
+        <ul class="list-group">
+            {% for item in task.result.details.error %}
+            <li class="list-group-item">
+                <i class="fas fa-times-circle text-danger me-2"></i>
+                {{ item.filename }} - <span class="text-danger">{{ item.message }}</span>
+            </li>
+            {% endfor %}
+        </ul>
         {% endif %}
         
-        {% else %}
-        <!-- 无详细结果 -->
-        <div class="alert alert-info">
-            <i class="fas fa-info-circle"></i> 没有可用的处理结果详情
+        {% elif task.task_type == 'batch_embed' and task.result %}
+        <!-- 批量嵌入结果 -->
+        <div class="results-summary">
+            <div class="result-stat result-stat-total">
+                <div class="result-number">{{ task.result.stats.processed|default(0) }}</div>
+                <div class="result-label">处理文件数</div>
+            </div>
+            <div class="result-stat result-stat-success">
+                <div class="result-number">{{ task.result.stats.chunked|default(0) }}</div>
+                <div class="result-label">文档片段数</div>
+            </div>
+            {% if task.result.stats.errors %}
+            <div class="result-stat result-stat-error">
+                <div class="result-number">{{ task.result.stats.errors|length }}</div>
+                <div class="result-label">错误数</div>
+            </div>
+            {% endif %}
+        </div>
+        
+        {% if task.result.message %}
+        <div class="alert alert-{{ 'success' if task.result.success else 'danger' }}">
+            {{ task.result.message }}
         </div>
         {% endif %}
         
-        <!-- 错误信息 -->
-        {% if task.error %}
-        <div class="alert alert-danger mt-4">
-            <h3 class="h5">错误信息</h3>
-            <p>{{ task.error }}</p>
-        </div>
+        {% if task.result.stats and task.result.stats.files %}
+        <h4>处理的文件</h4>
+        <ul class="list-group mb-4">
+            {% for filename in task.result.stats.files %}
+            <li class="list-group-item">
+                <i class="fas fa-file me-2"></i> {{ filename }}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        
+        {% if task.result.stats and task.result.stats.errors %}
+        <h4>处理错误</h4>
+        <ul class="list-group">
+            {% for error in task.result.stats.errors %}
+            <li class="list-group-item">
+                <i class="fas fa-exclamation-triangle text-danger me-2"></i>
+                {{ error }}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
         {% endif %}
     </div>
     {% endif %}

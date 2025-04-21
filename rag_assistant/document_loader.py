@@ -25,20 +25,25 @@ except ImportError:
     print("Warning: python-docx package not installed. DOCX file support will be disabled.")
     print("To enable DOCX support, install with: pip install python-docx")
 
-def load_documents(directory_path: str, file_types: Optional[List[str]] = None) -> List[Document]:
+def load_documents(directory_path: str, file_types: Optional[List[str]] = None, specific_files: Optional[List[str]] = None) -> List[Document]:
     """
-    Load documents from a directory, including all subdirectories recursively.
+    Load documents from a directory or from a list of specific files.
     
     Args:
-        directory_path: Path to the directory containing documents
-        file_types: List of file extensions to load (e.g., ['.pdf', '.txt', '.md'])
-                    If None, all supported file types will be loaded
+        directory_path: Path to the directory containing documents (or parent directory for specific files)
+        file_types: List of file extensions to load (e.g., ['pdf', 'txt', 'md']) without the dot
+                   If None, all supported file types will be loaded
+        specific_files: Optional list of specific file paths or filenames to process
+                       If provided, only these files will be processed
     
     Returns:
         List of Haystack Document objects
     """
     if file_types is None:
-        file_types = ['.pdf', '.txt', '.md', '.html', '.htm', '.docx']
+        file_types = ['pdf', 'txt', 'md', 'html', 'htm', 'docx']
+    
+    # Ensure file_types have proper format (without leading dots)
+    file_types = [ft.lower().lstrip('.') for ft in file_types]
     
     documents = []
     total_files = 0
@@ -47,78 +52,137 @@ def load_documents(directory_path: str, file_types: Optional[List[str]] = None) 
     encoding_success = {}
     directories_scanned = set()
     
-    print(f"Scanning directory and all subdirectories: {directory_path}")
-    print(f"Supported file types: {', '.join(file_types)}")
-    print("This loader supports Chinese documents with multiple encodings (UTF-8, GB18030, GBK, GB2312, BIG5)")
-    
-    # Count total files first and gather directory information
-    for root, _, files in os.walk(directory_path):
-        rel_path = os.path.relpath(root, directory_path)
-        if rel_path != '.':
-            directories_scanned.add(rel_path)
+    # Handle specific files mode
+    if specific_files:
+        print(f"Processing {len(specific_files)} specific files")
+        print(f"Supported file types: {', '.join(file_types)}")
         
-        for file in files:
-            if any(file.lower().endswith(ft) for ft in file_types):
-                total_files += 1
-    
-    if total_files == 0:
-        print(f"No supported files found in {directory_path} or its subdirectories")
-        return []
-    
-    subdirs_str = f" in {len(directories_scanned)} subdirectories" if directories_scanned else ""
-    print(f"Found {total_files} supported files to process{subdirs_str}")
-    
-    # 显示扫描到的子目录
-    if directories_scanned:
-        print("Subdirectories that will be processed:")
-        for subdir in sorted(directories_scanned):
-            print(f"  - {subdir}")
-    
-    # 按照目录层级加载文档
-    for root, _, files in os.walk(directory_path):
-        # 显示当前处理的目录
-        rel_path = os.path.relpath(root, directory_path)
-        dir_display = f"{rel_path}/" if rel_path != '.' else "(root)"
+        total_files = len(specific_files)
         
-        # 检查当前目录是否有支持的文件
-        has_supported_files = any(any(file.lower().endswith(ft) for ft in file_types) for file in files)
-        if has_supported_files:
-            print(f"\nProcessing directory: {dir_display}")
-        
-        for file in files:
-            if any(file.lower().endswith(ft) for ft in file_types):
-                file_path = os.path.join(root, file)
-                try:
-                    # 从文件名中提取标题（去除文件扩展名）
-                    filename_without_ext = os.path.splitext(file)[0]
-                    
-                    if file.lower().endswith('.pdf'):
-                        docs = load_pdf(file_path, filename_without_ext)
-                    elif file.lower().endswith('.txt'):
-                        docs = load_text(file_path, filename_without_ext)
-                    elif file.lower().endswith('.md'):
-                        docs = load_markdown(file_path, filename_without_ext)
-                    elif file.lower().endswith(('.html', '.htm')):
-                        docs = load_html(file_path, filename_without_ext)
-                    elif file.lower().endswith('.docx'):
-                        docs = load_docx(file_path, filename_without_ext)
-                    else:
-                        continue
-                    
-                    if docs:
-                        successful_files += 1
-                        documents.extend(docs)
-                        # Record which encoding succeeded (only for text-based files)
-                        if hasattr(docs[0], 'meta') and 'encoding' in docs[0].meta:
-                            encoding = docs[0].meta['encoding']
-                            encoding_success[encoding] = encoding_success.get(encoding, 0) + 1
-                        print(f"  Loaded {len(docs)} segments from {file}")
-                    else:
-                        failed_files += 1
-                        print(f"  No content extracted from {file}")
-                except Exception as e:
+        for file_path in specific_files:
+            # Check if it's an absolute path or just a filename
+            if os.path.isabs(file_path):
+                full_path = file_path
+                file = os.path.basename(file_path)
+            else:
+                full_path = os.path.join(directory_path, file_path)
+                file = file_path
+            
+            # Check if file extension is supported
+            file_ext = os.path.splitext(file)[1].lower().lstrip('.')
+            if file_ext not in file_types:
+                print(f"Skipping {file} - unsupported file type {file_ext}")
+                failed_files += 1
+                continue
+                
+            try:
+                # 从文件名中提取标题（去除文件扩展名）
+                filename_without_ext = os.path.splitext(file)[0]
+                
+                if file_ext == 'pdf':
+                    docs = load_pdf(full_path, filename_without_ext)
+                elif file_ext == 'txt':
+                    docs = load_text(full_path, filename_without_ext)
+                elif file_ext == 'md':
+                    docs = load_markdown(full_path, filename_without_ext)
+                elif file_ext in ['html', 'htm']:
+                    docs = load_html(full_path, filename_without_ext)
+                elif file_ext == 'docx':
+                    docs = load_docx(full_path, filename_without_ext)
+                else:
+                    continue
+                
+                if docs:
+                    successful_files += 1
+                    documents.extend(docs)
+                    # Record which encoding succeeded (only for text-based files)
+                    if hasattr(docs[0], 'meta') and 'encoding' in docs[0].meta:
+                        encoding = docs[0].meta['encoding']
+                        encoding_success[encoding] = encoding_success.get(encoding, 0) + 1
+                    print(f"  Loaded {len(docs)} segments from {file}")
+                else:
                     failed_files += 1
-                    print(f"  Error loading {file}: {e}")
+                    print(f"  No content extracted from {file}")
+            except Exception as e:
+                failed_files += 1
+                print(f"  Error loading {file}: {e}")
+        
+    # Directory scanning mode
+    else:
+        print(f"Scanning directory and all subdirectories: {directory_path}")
+        print(f"Supported file types: {', '.join(file_types)}")
+        print("This loader supports Chinese documents with multiple encodings (UTF-8, GB18030, GBK, GB2312, BIG5)")
+        
+        # Count total files first and gather directory information
+        for root, _, files in os.walk(directory_path):
+            rel_path = os.path.relpath(root, directory_path)
+            if rel_path != '.':
+                directories_scanned.add(rel_path)
+            
+            for file in files:
+                file_ext = os.path.splitext(file)[1].lower().lstrip('.')
+                if file_ext in file_types:
+                    total_files += 1
+        
+        if total_files == 0:
+            print(f"No supported files found in {directory_path} or its subdirectories")
+            return []
+        
+        subdirs_str = f" in {len(directories_scanned)} subdirectories" if directories_scanned else ""
+        print(f"Found {total_files} supported files to process{subdirs_str}")
+        
+        # 显示扫描到的子目录
+        if directories_scanned:
+            print("Subdirectories that will be processed:")
+            for subdir in sorted(directories_scanned):
+                print(f"  - {subdir}")
+        
+        # 按照目录层级加载文档
+        for root, _, files in os.walk(directory_path):
+            # 显示当前处理的目录
+            rel_path = os.path.relpath(root, directory_path)
+            dir_display = f"{rel_path}/" if rel_path != '.' else "(root)"
+            
+            # 检查当前目录是否有支持的文件
+            has_supported_files = any(os.path.splitext(file)[1].lower().lstrip('.') in file_types for file in files)
+            if has_supported_files:
+                print(f"\nProcessing directory: {dir_display}")
+            
+            for file in files:
+                file_ext = os.path.splitext(file)[1].lower().lstrip('.')
+                if file_ext in file_types:
+                    file_path = os.path.join(root, file)
+                    try:
+                        # 从文件名中提取标题（去除文件扩展名）
+                        filename_without_ext = os.path.splitext(file)[0]
+                        
+                        if file_ext == 'pdf':
+                            docs = load_pdf(file_path, filename_without_ext)
+                        elif file_ext == 'txt':
+                            docs = load_text(file_path, filename_without_ext)
+                        elif file_ext == 'md':
+                            docs = load_markdown(file_path, filename_without_ext)
+                        elif file_ext in ['html', 'htm']:
+                            docs = load_html(file_path, filename_without_ext)
+                        elif file_ext == 'docx':
+                            docs = load_docx(file_path, filename_without_ext)
+                        else:
+                            continue
+                        
+                        if docs:
+                            successful_files += 1
+                            documents.extend(docs)
+                            # Record which encoding succeeded (only for text-based files)
+                            if hasattr(docs[0], 'meta') and 'encoding' in docs[0].meta:
+                                encoding = docs[0].meta['encoding']
+                                encoding_success[encoding] = encoding_success.get(encoding, 0) + 1
+                            print(f"  Loaded {len(docs)} segments from {file}")
+                        else:
+                            failed_files += 1
+                            print(f"  No content extracted from {file}")
+                    except Exception as e:
+                        failed_files += 1
+                        print(f"  Error loading {file}: {e}")
     
     print(f"\nDocument loading summary:")
     print(f"Total files processed: {total_files}")
@@ -412,7 +476,8 @@ def chunk_documents(documents: List[Document], chunk_size: int = 1000, chunk_ove
             if chunk_text.strip():  # Skip empty chunks
                 chunk_meta = doc.meta.copy() if doc.meta else {}
                 chunk_meta["chunk_id"] = chunk_id
-                
+                chunk_meta["chunk_size"] = chunk_size
+                chunk_meta["chunk_overlap"] = chunk_overlap
                 chunked_doc = Document(
                     content=chunk_text,
                     meta=chunk_meta

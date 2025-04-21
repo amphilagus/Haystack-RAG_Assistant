@@ -10,7 +10,12 @@
     <div class="col-md-12">
         <div class="card shadow-sm">
             <div class="card-header bg-light">
-                <h3 class="my-0">Collection 列表</h3>
+                <div class="d-flex justify-content-between align-items-center">
+                    <h3 class="my-0">Collection 列表</h3>
+                    <button id="reload-collections" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-sync-alt"></i> 刷新列表
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 {% if collections %}
@@ -30,12 +35,6 @@
                                     <tr {% if not collection.exists_in_chroma %}class="table-warning"{% endif %}>
                                         <td>
                                             <strong>{{ collection.name }}</strong>
-                                            <button class="btn btn-sm btn-link p-0 ms-2" 
-                                                    data-bs-toggle="collapse" 
-                                                    data-bs-target="#details-{{ loop.index }}" 
-                                                    title="显示详细信息">
-                                                <i class="fas fa-info-circle"></i>
-                                            </button>
                                         </td>
                                         <td>
                                             {% if collection.exists_in_chroma %}
@@ -74,33 +73,6 @@
                                             </div>
                                         </td>
                                     </tr>
-                                    {% if collection.exists_in_chroma %}
-                                    <tr class="collapse" id="details-{{ loop.index }}">
-                                        <td colspan="5">
-                                            <div class="card card-body bg-light">
-                                                <h6>Collection详细信息</h6>
-                                                <div class="row">
-                                                    <div class="col-md-6">
-                                                        <p><strong>名称:</strong> {{ collection.name }}</p>
-                                                        <p><strong>文档数量:</strong> {{ collection.doc_count }}</p>
-                                                        <p><strong>嵌入模型:</strong> {{ collection.embedding_model }}</p>
-                                                    </div>
-                                                    <div class="col-md-6">
-                                                        <p><strong>创建时间:</strong> {{ collection.created_at }}</p>
-                                                        <p><strong>存储路径:</strong> {{ chroma_db_path }}/{{ collection.name }}</p>
-                                                        <p><strong>数据完整性:</strong> 
-                                                            {% if collection.exists_in_metadata %}
-                                                                <span class="text-success">元数据完整</span>
-                                                            {% else %}
-                                                                <span class="text-warning">缺少元数据</span>
-                                                            {% endif %}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {% endif %}
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -172,5 +144,34 @@
             form.submit();
         }
     }
+    
+    document.getElementById('reload-collections').addEventListener('click', function() {
+        // 显示加载指示器
+        this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 刷新中...';
+        this.disabled = true;
+        
+        // 发送重新加载请求
+        fetch('/database/reload', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                // 刷新页面以显示更新后的数据
+                window.location.reload();
+            } else {
+                throw new Error('刷新失败');
+            }
+        })
+        .catch(error => {
+            console.error('刷新出错:', error);
+            alert('刷新数据库集合失败: ' + error.message);
+            // 恢复按钮状态
+            this.innerHTML = '<i class="fas fa-sync-alt"></i> 刷新列表';
+            this.disabled = false;
+        });
+    });
 </script>
 {% endblock %} 

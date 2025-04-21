@@ -502,12 +502,26 @@ class RAGPipeline:
             filtered_docs = []
             duplicates_count = 0
             
+            # Group documents by source
+            documents_by_source = {}
             for doc in documents:
-                if is_duplicate_document(doc, self.document_store):
-                    print(f"Skipping duplicate document: {doc.meta.get('source', 'unknown')}")
-                    duplicates_count += 1
+                source = doc.meta.get('source', 'unknown')
+                if source not in documents_by_source:
+                    documents_by_source[source] = []
+                documents_by_source[source].append(doc)
+            
+            # Check one document from each source
+            for source, docs in documents_by_source.items():
+                if not docs:
+                    continue
+                    
+                # Only check the first document from each source
+                if is_duplicate_document(docs[0], self.document_store):
+                    print(f"Skipping duplicate documents from source: {source}")
+                    duplicates_count += len(docs)
                 else:
-                    filtered_docs.append(doc)
+                    # If not duplicate, add all documents from this source
+                    filtered_docs.extend(docs)
             
             if duplicates_count > 0:
                 print(f"Skipped {duplicates_count} duplicate documents")

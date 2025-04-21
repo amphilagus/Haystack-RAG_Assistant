@@ -109,7 +109,7 @@ BASE_TAGS = {
     "发表时间": "文献发表的年份或时间段",
     "研究领域": "文献所属的研究方向或领域",
     "评分": "文献的评分或重要性分级",
-    "自定义": "用户自定义分类，可用于特殊目的或临时分类"
+    "其他": "用户自定义分类，可用于特殊目的或临时分类"
 }
 
 # 预设次级标签定义
@@ -491,29 +491,58 @@ def rag_assistant_clear():
 
 @app.route('/')
 def index():
-    """首页路由"""
-    return redirect(url_for('list_files'))
+    """首页路由 - 显示炫酷的3D动画首页"""
+    now = datetime.datetime.now()
+    return render_template('home.html', now=now)
 
 
 @app.route('/files')
 def list_files():
     """List all files."""
     files = amphilagus.list_raw_data()
-    return render_template('files.html', files=files)
+    # Pass BASE_TAGS to template for filtering in the frontend
+    return render_template('files.html', files=files, filter_tags=None, exact=False, base_tag_names=list(BASE_TAGS.keys()))
 
 
 @app.route('/files/filter', methods=['GET'])
 def filter_files():
-    """Filter files by tag."""
-    tag_name = request.args.get('tag')
+    """Filter files by multiple tags."""
+    tags = request.args.getlist('tags')
     exact = request.args.get('exact', 'false').lower() == 'true'
     
-    if tag_name:
-        files = amphilagus.get_raw_data_by_tag(tag_name, include_subclasses=not exact)
-    else:
-        files = amphilagus.list_raw_data()
+    # 保持向后兼容性 - 如果使用旧格式的tag参数
+    tag_name = request.args.get('tag')
+    if tag_name and not tags:
+        tags = [tag_name]
     
-    return render_template('files.html', files=files, filter_tag=tag_name, exact=exact)
+    if not tags:
+        # 没有标签，显示所有文件
+        files = amphilagus.list_raw_data()
+    elif len(tags) == 1:
+        # 单个标签过滤，使用现有方法
+        files = amphilagus.get_raw_data_by_tag(tags[0], include_subclasses=not exact)
+    else:
+        # 多个标签过滤 - 使用文件名（可哈希）而不是Metadata对象（不可哈希）
+        
+        # 获取所有文件作为参考集
+        all_files = {file.filename: file for file in amphilagus.list_raw_data()}
+        
+        # 获取第一个标签的文件名集合
+        first_tag_files = set(file.filename for file in 
+                             amphilagus.get_raw_data_by_tag(tags[0], include_subclasses=not exact))
+        
+        # 与其他标签文件名集合求交集
+        matching_filenames = first_tag_files
+        for tag in tags[1:]:
+            tag_filenames = set(file.filename for file in 
+                               amphilagus.get_raw_data_by_tag(tag, include_subclasses=not exact))
+            matching_filenames = matching_filenames.intersection(tag_filenames)
+        
+        # 转换回Metadata对象列表
+        files = [all_files[filename] for filename in matching_filenames if filename in all_files]
+    
+    # Pass BASE_TAGS to template for filtering in the frontend
+    return render_template('files.html', files=files, filter_tags=tags, exact=exact, base_tag_names=list(BASE_TAGS.keys()))
 
 
 # Import the PDF converter
@@ -628,6 +657,96 @@ def delete_file(filename):
         flash(f'Error deleting file {filename}')
     
     return redirect(url_for('list_files'))
+
+
+@app.route('/files/batch_delete', methods=['POST'])
+def batch_delete_files():
+    """批量删除文件"""
+    filenames = request.form.getlist('filenames[]')
+    
+    if not filenames:
+        flash('未选择任何文件', 'warning')
+        return redirect(url_for('list_files'))
+    
+    success_count = 0
+    failed_files = []
+    
+    for filename in filenames:
+        try:
+            if amphilagus.delete_raw_data(filename):
+                success_count += 1
+            else:
+                failed_files.append(filename)
+        except Exception as e:
+            app.logger.error(f"删除文件 {filename} 时出错: {str(e)}")
+            failed_files.append(filename)
+    
+    # 显示结果消息
+    if success_count > 0:
+        flash(f'成功删除 {success_count} 个文件', 'success')
+    
+    if failed_files:
+        flash(f'无法删除以下文件: {", ".join(failed_files)}', 'error')
+    
+    return redirect(url_for('list_files'))
+
+
+@app.route('/files/batch_embed', methods=['POST'])
+def batch_embed_files():
+    """批量嵌入文件到向量数据库"""
+    try:
+        # 获取表单数据
+        collection_name = request.form.get('collection_name')
+        chunk_size = int(request.form.get('chunk_size', 1000))
+        chunk_overlap = int(request.form.get('chunk_overlap', 200))
+        check_duplicates = request.form.get('check_duplicates') == 'on'
+        filenames = request.form.getlist('filenames[]')
+        
+        # 验证输入
+        if not collection_name:
+            flash('请选择一个向量数据库集合', 'error')
+            return redirect(url_for('list_files'))
+        
+        if not filenames:
+            flash('未选择任何文件', 'warning')
+            return redirect(url_for('list_files'))
+        
+        # 获取完整的文件路径
+        file_paths = []
+        for filename in filenames:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            if os.path.exists(file_path):
+                file_paths.append(file_path)
+            else:
+                flash(f'文件不存在: {filename}', 'warning')
+        
+        if not file_paths:
+            flash('没有找到可处理的文件', 'error')
+            return redirect(url_for('list_files'))
+        
+        # 创建批量嵌入任务，而不是直接处理
+        task = task_manager.create_task(
+            task_type='batch_embed',
+            params={
+                'collection_name': collection_name,
+                'chunk_size': chunk_size,
+                'chunk_overlap': chunk_overlap,
+                'check_duplicates': check_duplicates,
+                'file_paths': file_paths,
+                'filenames': filenames  # 保存原始文件名用于显示
+            }
+        )
+        
+        # 显示任务创建成功
+        flash(f'批量嵌入任务已创建，将在后台处理 {len(file_paths)} 个文件', 'success')
+        
+        # 重定向到任务查看页面
+        return redirect(url_for('view_task', task_id=task.task_id))
+        
+    except Exception as e:
+        app.logger.error(f"创建批量嵌入任务时出错: {str(e)}")
+        flash(f'创建批量嵌入任务时出错: {str(e)}', 'error')
+        return redirect(url_for('list_files'))
 
 
 @app.route('/files/<filename>/tags', methods=['GET', 'POST'])
@@ -846,13 +965,37 @@ def api_list_tags():
     return jsonify([{"name": tag.name, "parent": tag.parent.name if tag.parent else None} for tag in tags])
 
 
+@app.route('/api/collections', methods=['GET'])
+def api_list_collections():
+    """API endpoint to list vector database collections."""
+    try:
+        collections_info = db_manager.list_collections()
+        collections = []
+        
+        for collection_info in collections_info:
+            if collection_info["exists_in_chroma"]:
+                collections.append({
+                    'name': collection_info["name"],
+                    'document_count': collection_info["doc_count"],
+                    'embedding_model': collection_info.get("embedding_model", "Unknown")
+                })
+                
+        return jsonify(collections)
+    except Exception as e:
+        app.logger.error(f"API获取集合列表时出错: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/database')
 def database_dashboard():
     """数据库管理面板"""
     try:
-        collections = []
         # 使用db_manager而不是直接调用导入的函数
         collections_info = db_manager.list_collections()
+        
+        # 获取数据库路径和状态统计
+        chroma_db_path = db_manager.get_db_path()
+        db_stats = db_manager.get_db_stats()
         
         # 打印调试信息
         app.logger.debug(f"从db_manager获取到的集合列表: {collections_info}")
@@ -863,31 +1006,58 @@ def database_dashboard():
         # 创建Chroma客户端实例检查
         if not db_manager.client:
             app.logger.error("ChromaDB客户端未初始化")
-            return render_template('database_dashboard.html', 
+            return render_template('database.html', 
                                   collections=[],
+                                  chroma_db_path=chroma_db_path,
+                                  db_stats=db_stats,
                                   error="ChromaDB客户端未初始化，请检查数据库路径")
-        
-        for collection_info in collections_info:
-            if collection_info["exists_in_chroma"]:
-                collections.append({
-                    'name': collection_info["name"],
-                    'document_count': collection_info["doc_count"],
-                    'embedding_model': collection_info.get("embedding_model", "Unknown"),
-                    'description': collection_info.get("metadata", {}).get("description", ""),
-                    'creation_time': collection_info.get("created_at", datetime.datetime.now()),
-                    'total_size_mb': 0  # 后续可以根据文档大小统计
-                })
                 
-        return render_template('database_dashboard.html', 
-                              collections=collections,
+        return render_template('database.html', 
+                              collections=collections_info,
+                              chroma_db_path=chroma_db_path,
+                              db_stats=db_stats,
                               success=request.args.get('success'),
                               error=request.args.get('error'))
     except Exception as e:
         import traceback
         app.logger.error(f"读取集合列表时出错: {str(e)}\n{traceback.format_exc()}")
-        return render_template('database_dashboard.html', 
+        return render_template('database.html', 
                               collections=[],
+                              chroma_db_path=db_manager.get_db_path() if db_manager else "未知",
+                              db_stats={"total_collections": 0, "normal_collections": 0, 
+                                        "missing_metadata": 0, "orphaned_metadata": 0, 
+                                        "total_documents": 0},
                               error=f"读取集合列表时出错: {str(e)}")
+
+
+@app.route('/database/reload', methods=['POST'])
+def reload_database():
+    """重新加载数据库集合信息"""
+    try:
+        # 重新初始化数据库管理器的客户端连接
+        if db_manager.client is not None:
+            # 关闭现有客户端连接
+            try:
+                del db_manager.client
+            except:
+                pass
+            
+        # 重新创建客户端连接
+        import chromadb
+        try:
+            db_manager.client = chromadb.PersistentClient(path=str(db_manager.chroma_db_path))
+            app.logger.info("成功重新初始化ChromaDB客户端连接")
+            
+            # 刷新集合列表
+            db_manager.list_collections()
+            
+            return jsonify({"success": True, "message": "数据库集合信息已重新加载"}), 200
+        except Exception as e:
+            app.logger.error(f"重新初始化ChromaDB客户端时出错: {str(e)}")
+            return jsonify({"success": False, "message": f"重新加载失败: {str(e)}"}), 500
+    except Exception as e:
+        app.logger.error(f"重新加载数据库集合信息时出错: {str(e)}")
+        return jsonify({"success": False, "message": f"重新加载失败: {str(e)}"}), 500
 
 
 @app.route('/database/collections/<collection_name>')

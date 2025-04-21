@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+
+{% block title %}AMPHILAGUS - 知识管理与RAG助手{% endblock %}
+
+{% block head_extra %}
+<style>
+    /* 隐藏标准页面标题和副标题 */
+    .container .mb-2 {
+        display: none;
+    }
+    
+    body {
+        overflow: hidden;
+        background-color: #000;
+        margin: 0;
+        padding: 0;
+    }
+    
+    /* 隐藏页脚 */
+    .footer {
+        display: none;
+    }
+    
+    .full-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1;
+    }
+    
+    #animation-canvas {
+        width: 100%;
+        height: 100%;
+    }
+    
+    .content-overlay {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: white;
+        z-index: 10;
+        width: 80%;
+        max-width: 900px;
+    }
+    
+    .logo-text {
+        font-size: 5rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+        text-shadow: 0 0 20px rgba(101, 155, 255, 0.7);
+        background: linear-gradient(135deg, #64b3f4 0%, #c2e59c 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: 0.1em;
+    }
+    
+    .tagline {
+        font-size: 1.5rem;
+        margin-bottom: 2rem;
+        color: rgba(255, 255, 255, 0.8);
+        text-shadow: 0 0 10px rgba(101, 155, 255, 0.5);
+        max-width: 800px;
+        margin-left: auto;
+        margin-right: auto;
+        line-height: 1.8;
+        white-space: pre-line;
+    }
+    
+    .nav-buttons {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        margin-top: 24rem;
+        flex-wrap: wrap;
+    }
+    
+    .nav-button {
+        padding: 1rem 2rem;
+        font-size: 1rem;
+        font-weight: 600;
+        border-radius: 50px;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+        text-decoration: none;
+        margin: 0.5rem;
+    }
+    
+    .nav-button:hover {
+        background: rgba(255, 255, 255, 0.2);
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        color: white;
+    }
+    
+    .nav-button i {
+        margin-right: 0.5rem;
+    }
+    
+    @media (max-width: 768px) {
+        .logo-text {
+            font-size: 3rem;
+        }
+        
+        .tagline {
+            font-size: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="full-container">
+    <canvas id="animation-canvas"></canvas>
+</div>
+
+<div class="content-overlay">
+    <h1 class="logo-text">AMPHILAGUS</h1>
+    <p class="tagline">Augmented Memory & Pipeline Hub
+for Hybrid-Search Insight, Loop-Learning,
+Agentic Governance and a Unified-Workspace
+with Sync-Everywhere.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 设置场景
+        const scene = new THREE.Scene();
+        
+        // 设置相机
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 30;
+        
+        // 设置渲染器
+        const renderer = new THREE.WebGLRenderer({
+            canvas: document.getElementById('animation-canvas'),
+            antialias: true,
+            alpha: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000, 1);
+        
+        // 创建星空背景
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.1,
+            transparent: true
+        });
+        
+        const starsVertices = [];
+        for (let i = 0; i < 15000; i++) {
+            const x = (Math.random() - 0.5) * 2000;
+            const y = (Math.random() - 0.5) * 2000;
+            const z = (Math.random() - 0.5) * 2000;
+            starsVertices.push(x, y, z);
+        }
+        
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+        
+        // 创建神经网络节点
+        const nodesCount = 350;  // 增加节点数量
+        const nodes = new THREE.Group();
+        const nodePositions = [];
+        
+        // 创建不同层次的节点材质
+        const nodeMaterials = [
+            new THREE.MeshBasicMaterial({
+                color: 0x4a98ff,
+                transparent: true,
+                opacity: 0.8
+            }),
+            new THREE.MeshBasicMaterial({
+                color: 0x64b3f4,
+                transparent: true,
+                opacity: 0.7
+            }),
+            new THREE.MeshBasicMaterial({
+                color: 0x5ce1e6,
+                transparent: true,
+                opacity: 0.6
+            })
+        ];
+        
+        // 创建不同大小的几何体
+        const nodeGeometries = [
+            new THREE.SphereGeometry(0.15, 8, 8),  // 增大节点尺寸，原为0.08
+            new THREE.SphereGeometry(0.12, 8, 8),  // 增大节点尺寸，原为0.06
+            new THREE.SphereGeometry(0.09, 8, 8)   // 增大节点尺寸，原为0.04
+        ];
+        
+        for (let i = 0; i < nodesCount; i++) {
+            // 随机选择几何体和材质，增加层次感
+            const materialIndex = Math.floor(Math.random() * nodeMaterials.length);
+            const geometryIndex = Math.floor(Math.random() * nodeGeometries.length);
+            
+            const node = new THREE.Mesh(nodeGeometries[geometryIndex], nodeMaterials[materialIndex]);
+            
+            // 创建多层脑形状的点位分布
+            const phi = Math.acos(-1 + (2 * i) / nodesCount);
+            const theta = Math.sqrt(nodesCount * Math.PI) * phi;
+            
+            // 创建椭球形分布，增加随机性和厚度
+            const radiusScale = 0.9 + Math.random() * 0.2; // 0.9-1.1随机缩放比例
+            const x = Math.sin(phi) * Math.cos(theta) * 12 * radiusScale;
+            const y = Math.sin(phi) * Math.sin(theta) * 8 * radiusScale;
+            const z = Math.cos(phi) * 10 * radiusScale;
+            
+            // 增加位置随机性，创造更自然的分布
+            node.position.set(
+                x + (Math.random() - 0.5) * 4,
+                y + (Math.random() - 0.5) * 4,
+                z + (Math.random() - 0.5) * 4
+            );
+            
+            // 存储节点位置以便连线
+            nodePositions.push(node.position);
+            
+            nodes.add(node);
+        }
+        scene.add(nodes);
+        
+        // 创建节点之间的连接，增加密度
+        const linksGroup = new THREE.Group();
+        
+        // 创建多种不同透明度的线材质
+        const linesMaterials = [
+            new THREE.LineBasicMaterial({
+                color: 0x4a98ff,
+                transparent: true,
+                opacity: 0.2,
+                linewidth: 0.1  // 减小线宽（注意：WebGL有线宽限制）
+            }),
+            new THREE.LineBasicMaterial({
+                color: 0x64b3f4,
+                transparent: true,
+                opacity: 0.15,
+                linewidth: 0.1  // 减小线宽
+            }),
+            new THREE.LineBasicMaterial({
+                color: 0x5ce1e6,
+                transparent: true,
+                opacity: 0.1,
+                linewidth: 0.1  // 减小线宽
+            })
+        ];
+        
+        // 为每个节点创建多个随机连接 (距离靠近的更可能连接)
+        for (let i = 0; i < nodesCount; i++) {
+            const origin = nodePositions[i];
+            
+            for (let j = i + 1; j < nodesCount; j++) {
+                const target = nodePositions[j];
+                const distance = origin.distanceTo(target);
+                
+                // 增加连接概率，特别是对距离较近的节点
+                let connectionProbability = 0;
+                if (distance < 3) {
+                    connectionProbability = 0.3;  // 近距离节点高概率连接
+                } else if (distance < 6) {
+                    connectionProbability = 0.15;  // 中等距离节点中等概率连接
+                } else if (distance < 10) {
+                    connectionProbability = 0.05;  // 较远距离节点低概率连接
+                }
+                
+                if (Math.random() < connectionProbability) {
+                    // 随机选择线材质
+                    const materialIndex = Math.floor(Math.random() * linesMaterials.length);
+                    const lineGeometry = new THREE.BufferGeometry().setFromPoints([origin, target]);
+                    const line = new THREE.Line(lineGeometry, linesMaterials[materialIndex]);
+                    linksGroup.add(line);
+                }
+            }
+        }
+        scene.add(linksGroup);
+        
+        // 创建一些长距离连接，模拟跨区域神经连接
+        for (let i = 0; i < 50; i++) {
+            const startIndex = Math.floor(Math.random() * nodesCount);
+            const endIndex = Math.floor(Math.random() * nodesCount);
+            
+            if (startIndex !== endIndex) {
+                const startPoint = nodePositions[startIndex];
+                const endPoint = nodePositions[endIndex];
+                
+                const lineGeometry = new THREE.BufferGeometry().setFromPoints([startPoint, endPoint]);
+                const line = new THREE.Line(lineGeometry, linesMaterials[2]); // 使用最透明的材质
+                linksGroup.add(line);
+            }
+        }
+        
+        // 创建中心光球，增强中心效果
+        const coreMaterial = new THREE.MeshBasicMaterial({
+            color: 0x4a98ff,
+            transparent: true,
+            opacity: 0.6
+        });
+        const coreGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+        const core = new THREE.Mesh(coreGeometry, coreMaterial);
+        scene.add(core);
+        
+        // 创建光环
+        const ringGeometry = new THREE.RingGeometry(3, 3.5, 32);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0x64b3f4,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.5
+        });
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.rotation.x = Math.PI / 2;
+        scene.add(ring);
+        
+        // 窗口尺寸变化时更新渲染尺寸
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // 鼠标移动效果
+        let mouseX = 0;
+        let mouseY = 0;
+        document.addEventListener('mousemove', function(event) {
+            mouseX = (event.clientX - window.innerWidth / 2) * 0.0005;
+            mouseY = (event.clientY - window.innerHeight / 2) * 0.0005;
+        });
+        
+        // 移除键盘事件监听
+        // document.addEventListener('keydown', function(event) {
+        //     // 任何键盘快捷键都已移除
+        // });
+        
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // 旋转整个神经网络
+            nodes.rotation.y += 0.002;
+            nodes.rotation.x += 0.001;
+            linksGroup.rotation.y += 0.002;
+            linksGroup.rotation.x += 0.001;
+            
+            // 基于鼠标位置轻微旋转相机
+            camera.position.x += (mouseX - camera.position.x) * 0.05;
+            camera.position.y += (-mouseY - camera.position.y) * 0.05;
+            camera.lookAt(scene.position);
+            
+            // 星空微移动
+            stars.rotation.y += 0.0002;
+            
+            // 光球呼吸效果
+            const pulseFactor = Math.sin(Date.now() * 0.001) * 0.1 + 0.9;
+            core.scale.set(pulseFactor, pulseFactor, pulseFactor);
+            
+            // 光环旋转
+            ring.rotation.z += 0.003;
+            
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+    });
+</script>
+{% endblock %} 

@@ -13,7 +13,7 @@ import chromadb
 # 导入rag_assistant的相关模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rag_assistant.collection_metadata import list_collections, get_collection_metadata, delete_collection_metadata
-from rag_assistant.document_loader import load_documents
+from rag_assistant.document_loader import load_documents, chunk_documents
 from rag_assistant.rag_pipeline import RAGPipeline
 from rag_assistant.custom_document_store import CustomChromaDocumentStore
 
@@ -364,6 +364,7 @@ class DatabaseManager:
                 
             # 初始化pipeline (不包含LLM组件)
             pipeline = RAGPipeline(
+                collection_name=collection_name,
                 embedding_model=embedding_model,
                 use_llm=False  # 不使用LLM生成
             )
@@ -376,7 +377,7 @@ class DatabaseManager:
         except Exception as e:
             return False, f"初始化Pipeline时出错: {str(e)}", None
     
-    def add_document(self, collection_name: str, document_content: str, metadata: Dict[str, Any] = None) -> Tuple[bool, str, Optional[str]]:
+    def add_files(self, collection_name: str, document_content: str, metadata: Dict[str, Any] = None) -> Tuple[bool, str, Optional[str]]:
         """
         添加文档到collection
         
@@ -397,90 +398,14 @@ class DatabaseManager:
             pipeline = self.pipelines[collection_name]
         
         try:
-            # 准备文档
-            if metadata is None:
-                metadata = {}
-                
             # 使用RAG Pipeline添加文档
-            document_id = pipeline.add_document(document_content, metadata)
+            pipeline.add_document(document_content, check_duplicates=True)
             
             return True, f"成功添加文档", document_id
             
         except Exception as e:
             return False, f"添加文档时出错: {str(e)}", None
-    
-    def add_documents_from_files(self, collection_name: str, file_paths: List[str], metadata: Dict[str, Any] = None) -> Tuple[bool, str, List[str]]:
-        """
-        从文件添加文档到collection
-        
-        Args:
-            collection_name: Collection名称
-            file_paths: 文件路径列表
-            metadata: 文档元数据
-            
-        Returns:
-            (成功标志, 消息, 文档ID列表)
-        """
-        # 检查pipeline是否已初始化
-        if collection_name not in self.pipelines:
-            success, message, pipeline = self.init_pipeline(collection_name)
-            if not success:
-                return False, message, []
-        else:
-            pipeline = self.pipelines[collection_name]
-        
-        try:
-            # 初始化文档加载器
-            document_loader = DocumentLoader()
-            
-            # 加载文档
-            documents = []
-            for file_path in file_paths:
-                try:
-                    file_type = Path(file_path).suffix.lower()
-                    
-                    # 使用DocumentLoader加载文档
-                    loaded_docs = document_loader.load_document(file_path)
-                    
-                    if loaded_docs:
-                        for doc in loaded_docs:
-                            doc_metadata = doc.metadata.copy() if hasattr(doc, 'metadata') else {}
-                            
-                            # 合并额外的元数据
-                            if metadata:
-                                doc_metadata.update(metadata)
-                                
-                            # 添加源文件信息
-                            doc_metadata['source'] = file_path
-                            doc_metadata['file_type'] = file_type
-                            
-                            documents.append((doc.content, doc_metadata))
-                            
-                except Exception as e:
-                    print(f"Error loading document {file_path}: {str(e)}")
-                    # 继续处理其他文件
-            
-            # 如果没有成功加载任何文档
-            if not documents:
-                return False, "未能从文件中加载任何文档", []
-                
-            # 使用Pipeline添加文档
-            document_ids = []
-            for content, doc_metadata in documents:
-                try:
-                    doc_id = pipeline.add_document(content, doc_metadata)
-                    document_ids.append(doc_id)
-                except Exception as e:
-                    print(f"Error adding document to collection: {str(e)}")
-                    
-            if document_ids:
-                return True, f"成功添加 {len(document_ids)} 个文档到 {collection_name}", document_ids
-            else:
-                return False, "添加文档到集合时出错", []
-                
-        except Exception as e:
-            return False, f"处理文件时出错: {str(e)}", []
-    
+
     def search_documents(self, collection_name: str, query: str, top_k: int = 5) -> Dict[str, Any]:
         """
         在collection中搜索文档
@@ -561,4 +486,100 @@ class DatabaseManager:
             return True, f"成功删除文档 {document_id}"
             
         except Exception as e:
-            return False, f"删除文档时出错: {str(e)}" 
+            return False, f"删除文档时出错: {str(e)}"
+
+    def embed_files(self, collection_name: str, file_paths: List[str], 
+                    chunk_size: int = 1000, chunk_overlap: int = 200,
+                    check_duplicates: bool = True) -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        将文件嵌入到向量数据库中
+        
+        步骤:
+        1. 检查pipeline是否已初始化
+        2. 使用rag_assistant的load_documents方法把files转化为haystack的document
+        3. 使用rag_assistant的chunk_documents切片
+        4. 使用rag_pipeline.add_documents嵌入
+        
+        Args:
+            collection_name: 集合名称
+            file_paths: 文件路径列表
+            chunk_size: 文档切片大小
+            chunk_overlap: 切片重叠大小
+            check_duplicates: 是否检查重复文档
+            
+        Returns:
+            (成功标志, 消息, 结果统计)
+        """
+        # 1. 检查pipeline是否已初始化
+        if collection_name not in self.pipelines:
+            success, message, pipeline = self.init_pipeline(collection_name)
+            if not success:
+                return False, message, {"processed": 0, "errors": [message]}
+        else:
+            pipeline = self.pipelines[collection_name]
+        
+        stats = {
+            "processed": 0,
+            "chunked": 0,
+            "errors": [],
+            "skipped": [],
+            "files": []
+        }
+        
+        try:
+            # 确保文件存在
+            existing_files = []
+            for file_path in file_paths:
+                if os.path.exists(file_path):
+                    existing_files.append(file_path)
+                else:
+                    stats["errors"].append(f"文件不存在: {file_path}")
+            
+            if not existing_files:
+                return False, "没有找到可处理的文件", stats
+            
+            # 2. 使用rag_assistant的load_documents方法直接加载指定文件
+            # 获取文件类型(扩展名)，不带点号
+            file_types = set()
+            for file_path in existing_files:
+                ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+                if ext:  # 只添加非空扩展名
+                    file_types.add(ext)
+            
+            # 如果没有识别到文件类型，使用默认值
+            if not file_types:
+                file_types = ['pdf', 'txt', 'md', 'html', 'htm', 'docx']
+            
+            try:
+                # 以指定文件模式调用load_documents
+                # 使用当前目录作为基准目录（仅影响日志输出）
+                documents = load_documents(".", file_types=list(file_types), specific_files=existing_files)
+                
+                # 更新统计信息
+                stats["processed"] = len(existing_files)
+                stats["files"] = [os.path.basename(f) for f in existing_files]
+                
+            except Exception as e:
+                return False, f"加载文档时出错: {str(e)}", stats
+            
+            if not documents:
+                return False, "未能从文件中提取任何文档", stats
+            
+            # 3. 使用rag_assistant的chunk_documents切片
+            try:
+                chunked_documents = chunk_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+                stats["chunked"] = len(chunked_documents)
+            except Exception as e:
+                return False, f"文档切片时出错: {str(e)}", stats
+            
+            # 4. 使用rag_pipeline.add_documents嵌入
+            try:
+                pipeline.add_documents(chunked_documents, check_duplicates=check_duplicates)
+                
+                return True, f"成功处理 {stats['processed']} 个文件，生成 {stats['chunked']} 个文档片段", stats
+                
+            except Exception as e:
+                return False, f"文档嵌入时出错: {str(e)}", stats
+            
+        except Exception as e:
+            return False, f"文件嵌入处理时出错: {str(e)}", stats 

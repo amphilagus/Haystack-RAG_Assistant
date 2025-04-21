@@ -4,8 +4,12 @@
 
 {% block header %}文件列表{% endblock %}
 {% block subheader %}
-    {% if filter_tag %}
-        正在查看标签 <span class="badge bg-info">{{ filter_tag }}</span> 的文件
+    {% if filter_tags %}
+        正在查看标签 
+        {% for tag in filter_tags %}
+            <span class="badge bg-info">{{ tag }}</span>{% if not loop.last %} + {% endif %}
+        {% endfor %}
+        的文件
         {% if exact %}（精确匹配）{% else %}（包含子类）{% endif %}
         <a href="{{ url_for('list_files') }}" class="btn btn-sm btn-outline-secondary ms-2">查看全部文件</a>
     {% else %}
@@ -16,17 +20,34 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col-md-8">
-        <form action="{{ url_for('filter_files') }}" method="get" class="form-inline">
-            <div class="input-group">
+        <form action="{{ url_for('filter_files') }}" method="get" class="form-inline" id="tagFilterForm">
+            <div class="input-group mb-2">
                 <div class="input-group-prepend">
                     <span class="input-group-text">按标签筛选</span>
                 </div>
-                <input type="text" name="tag" class="form-control" placeholder="输入标签名" value="{{ filter_tag or '' }}">
-                <div class="input-group-text">
-                    <input class="form-check-input mt-0" type="checkbox" name="exact" value="true" {% if exact %}checked{% endif %}>
-                    <span class="ms-2">精确匹配</span>
+                <div class="tag-input-container position-relative flex-grow-1">
+                    <input type="text" id="tagInput" class="form-control" placeholder="输入标签名" autocomplete="off">
+                    <div id="tagSuggestions" class="tag-suggestions d-none position-absolute w-100 mt-1 bg-white border rounded shadow-sm"></div>
                 </div>
+                <button type="button" id="addTagBtn" class="btn btn-secondary">添加</button>
                 <button type="submit" class="btn btn-primary">筛选</button>
+            </div>
+            <div class="d-flex align-items-center mb-2">
+                <div class="form-check form-switch me-4">
+                    <input class="form-check-input" type="checkbox" name="exact" id="exactMatch" value="true" {% if exact %}checked{% endif %}>
+                    <label class="form-check-label" for="exactMatch">精确匹配</label>
+                </div>
+                <div id="selectedTagsContainer" class="d-flex flex-wrap gap-2">
+                    {% if filter_tags %}
+                        {% for tag in filter_tags %}
+                            <div class="selected-tag badge bg-info d-flex align-items-center">
+                                {{ tag }}
+                                <input type="hidden" name="tags" value="{{ tag }}">
+                                <button type="button" class="btn-close btn-close-white ms-1" aria-label="Remove" onclick="removeTag(this)"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
             </div>
         </form>
     </div>
@@ -37,18 +58,49 @@
     </div>
 </div>
 
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-light">
+                <strong>常用标签</strong>
+            </div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap gap-2" id="commonTagsContainer">
+                    <!-- 这里会通过JS加载常用标签 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Batch operations -->
+<div class="mb-4 d-flex gap-2">
+    <button type="button" class="btn btn-sm btn-danger" id="batchDeleteBtn" disabled data-bs-toggle="modal" data-bs-target="#batchDeleteModal">
+        <i class="bi bi-trash"></i> 批量删除
+    </button>
+    
+    <button type="button" class="btn btn-sm btn-primary" id="batchEmbedBtn" disabled data-bs-toggle="modal" data-bs-target="#batchEmbedModal">
+        <i class="bi bi-database"></i> 批量嵌入
+    </button>
+</div>
+
 {% if files %}
     <style>
         /* 调整表格各列的宽度比例 */
+        .files-table th.checkbox-col, .files-table td.checkbox-col {
+            width: 5%;
+            min-width: 40px;
+            text-align: center;
+        }
         .files-table th.filename-col, .files-table td.filename-col {
-            width: 30%;
+            width: 27%;
             max-width: 350px;
         }
         .files-table th.tags-col, .files-table td.tags-col {
             width: 25%;
         }
         .files-table th.desc-col, .files-table td.desc-col {
-            width: 35%;
+            width: 33%;
         }
         .files-table th.actions-col, .files-table td.actions-col {
             width: 10%;
@@ -65,11 +117,71 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        
+        /* 标签自动完成样式 */
+        .tag-suggestions {
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .tag-suggestion-item {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+        }
+        .tag-suggestion-item:hover, .tag-suggestion-item.active {
+            background-color: #f8f9fa;
+        }
+        .tag-suggestion-item .match {
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        .selected-tag {
+            padding: 0.25rem 0.5rem;
+            margin-right: 0.25rem;
+            margin-bottom: 0.25rem;
+            display: inline-flex;
+            align-items: center;
+        }
+        .btn-close {
+            font-size: 0.5rem;
+            padding: 0.25rem;
+        }
+        .selected-tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        /* 批量操作样式 */
+        .batch-operations {
+            padding: 10px 0;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding-left: 10px;
+        }
+        .selected-count {
+            font-weight: bold;
+        }
     </style>
+    
+    <div class="batch-operations mb-3 d-flex align-items-center">
+        <div class="form-check me-3">
+            <input class="form-check-input" type="checkbox" id="selectAllCheckbox">
+            <label class="form-check-label" for="selectAllCheckbox">
+                全选
+            </label>
+        </div>
+        <div class="selected-count me-3" id="selectedCount">已选择: 0 个文件</div>
+        <button type="button" id="clearSelectionBtn" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-times me-1"></i>清除选择
+        </button>
+    </div>
+    
     <div class="table-responsive">
         <table class="table table-hover files-table">
             <thead class="table-light">
                 <tr>
+                    <th class="checkbox-col">选择</th>
                     <th class="filename-col">文件名</th>
                     <th class="tags-col">标签</th>
                     <th class="desc-col">描述</th>
@@ -78,11 +190,14 @@
             </thead>
             <tbody>
                 {% for file in files %}
-                    <tr>
+                    <tr data-file-id="{{ file.filename }}">
+                        <td class="checkbox-col">
+                            <input class="form-check-input file-checkbox" type="checkbox" value="{{ file.filename }}">
+                        </td>
                         <td class="filename-col" title="{{ file.filename }}">{{ file.filename }}</td>
                         <td class="tags-col">
                             {% for tag in file.tags %}
-                                <span class="badge bg-info me-1">{{ tag }}</span>
+                                <span class="badge bg-info me-1 clickable-tag" onclick="addFilterTag('{{ tag }}')">{{ tag }}</span>
                             {% endfor %}
                         </td>
                         <td class="desc-col" title="{{ file.description }}">{{ file.description[:50] }}{% if file.description|length > 50 %}...{% endif %}</td>
@@ -108,8 +223,12 @@
 {% else %}
     <div class="alert alert-secondary">
         <i class="fas fa-info-circle me-2"></i>
-        {% if filter_tag %}
-            未找到带有标签 <strong>{{ filter_tag }}</strong> 的文件。
+        {% if filter_tags %}
+            未找到带有标签 
+            {% for tag in filter_tags %}
+                <strong>{{ tag }}</strong>{% if not loop.last %} 和 {% endif %}
+            {% endfor %}
+            的文件。
         {% else %}
             暂无文件。
         {% endif %}
@@ -137,15 +256,563 @@
         </div>
     </div>
 </div>
+
+<!-- Batch Delete Confirmation Modal -->
+<div class="modal fade" id="batchDeleteModal" tabindex="-1" aria-labelledby="batchDeleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="batchDeleteModalLabel">确认批量删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要删除以下 <span id="batchDeleteCount"></span> 个文件吗？此操作不可撤销。</p>
+                <div id="filesToDeleteList" class="mt-3" style="max-height: 200px; overflow-y: auto;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <form id="batchDeleteForm" method="post" action="{{ url_for('batch_delete_files') }}">
+                    <div id="batchDeleteFilesContainer"></div>
+                    <button type="submit" class="btn btn-danger">删除所选文件</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Batch Embed Modal -->
+<div class="modal fade" id="batchEmbedModal" tabindex="-1" aria-labelledby="batchEmbedModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="batchEmbedModalLabel">批量嵌入文件</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="batchEmbedForm" method="post" action="{{ url_for('batch_embed_files') }}">
+                    <div class="mb-3">
+                        <label for="collectionSelect" class="form-label">选择向量数据库集合</label>
+                        <select class="form-select" id="collectionSelect" name="collection_name" required>
+                            <option value="" selected disabled>请选择集合...</option>
+                            <!-- 集合列表会通过Ajax加载 -->
+                        </select>
+                        <div class="form-text">选择要将文件嵌入的目标向量数据库集合。</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="chunkSize" class="form-label">文档分块大小</label>
+                                <input type="number" class="form-control" id="chunkSize" name="chunk_size" 
+                                       value="1000" min="100" max="10000">
+                                <div class="form-text">每个文档块的最大字符数</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="chunkOverlap" class="form-label">分块重叠大小</label>
+                                <input type="number" class="form-control" id="chunkOverlap" name="chunk_overlap" 
+                                       value="200" min="0" max="1000">
+                                <div class="form-text">相邻块之间重叠的字符数</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="checkDuplicates" name="check_duplicates" checked>
+                        <label class="form-check-label" for="checkDuplicates">检查重复文档</label>
+                        <div class="form-text">避免重复添加已经存在的文档</div>
+                    </div>
+                    
+                    <hr>
+                    <p>将嵌入以下 <span id="batchEmbedCount"></span> 个文件：</p>
+                    <div id="filesToEmbedList" class="mt-3" style="max-height: 200px; overflow-y: auto;"></div>
+                    
+                    <div id="batchEmbedFilesContainer"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="submitEmbedBtn">开始嵌入</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+    // 所有可用标签列表 - 需要后端提供
+    let allTags = [];
+    // 基础标签列表 - 后端提供，需要从常用标签中排除
+    const baseTagNames = JSON.parse('{% if base_tag_names %}{{ base_tag_names|tojson }}{% else %}[]{% endif %}');
+    // 存储选中的文件集合
+    let selectedFiles = new Set();
+    
+    // 获取所有标签
+    function fetchAllTags() {
+        fetch('{{ url_for("api_list_tags") }}')
+            .then(response => response.json())
+            .then(data => {
+                allTags = data.map(tag => tag.name);
+                populateCommonTags();
+            })
+            .catch(error => console.error('获取标签失败:', error));
+    }
+    
+    // 填充常用标签区域
+    function populateCommonTags() {
+        const container = document.getElementById('commonTagsContainer');
+        container.innerHTML = '';
+        
+        // 过滤掉基础标签
+        const filteredTags = allTags.filter(tag => !baseTagNames.includes(tag));
+        
+        // 显示前20个标签(或者你可以计算频率排序)
+        const tagsToShow = filteredTags.slice(0, 20);
+        
+        if (tagsToShow.length === 0) {
+            container.innerHTML = '<em>暂无可用标签</em>';
+            return;
+        }
+        
+        tagsToShow.forEach(tag => {
+            const tagBadge = document.createElement('span');
+            tagBadge.className = 'badge bg-secondary clickable-tag';
+            tagBadge.textContent = tag;
+            tagBadge.style.cursor = 'pointer';
+            tagBadge.onclick = () => addFilterTag(tag);
+            container.appendChild(tagBadge);
+        });
+    }
+    
+    // 添加选中的标签
+    function addFilterTag(tagName) {
+        // 检查标签是否已存在
+        const existingTags = Array.from(document.querySelectorAll('input[name="tags"]')).map(input => input.value);
+        if (existingTags.includes(tagName)) {
+            return; // 已存在则不再添加
+        }
+        
+        const container = document.getElementById('selectedTagsContainer');
+        
+        // 创建标签元素
+        const tagElement = document.createElement('div');
+        tagElement.className = 'selected-tag badge bg-info d-flex align-items-center';
+        
+        // 标签文本
+        tagElement.appendChild(document.createTextNode(tagName));
+        
+        // 隐藏的表单字段
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'tags';
+        hiddenInput.value = tagName;
+        tagElement.appendChild(hiddenInput);
+        
+        // 删除按钮
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'btn-close btn-close-white ms-1';
+        closeBtn.setAttribute('aria-label', 'Remove');
+        closeBtn.onclick = function() { removeTag(this); };
+        tagElement.appendChild(closeBtn);
+        
+        container.appendChild(tagElement);
+        
+        // 清空输入框
+        document.getElementById('tagInput').value = '';
+    }
+    
+    // 移除标签
+    function removeTag(button) {
+        button.closest('.selected-tag').remove();
+    }
+    
+    // 标签自动完成功能
+    function setupTagAutocomplete() {
+        const tagInput = document.getElementById('tagInput');
+        const suggestionsContainer = document.getElementById('tagSuggestions');
+        let activeIndex = -1;
+        
+        // 输入监听
+        tagInput.addEventListener('input', () => {
+            const inputText = tagInput.value.trim().toLowerCase();
+            if (inputText === '') {
+                suggestionsContainer.classList.add('d-none');
+                return;
+            }
+            
+            // 过滤匹配的标签
+            const matchingTags = allTags.filter(tag => 
+                tag.toLowerCase().includes(inputText)
+            ).sort((a, b) => {
+                // 优先显示以输入文本开头的标签
+                const aStartsWithInput = a.toLowerCase().startsWith(inputText);
+                const bStartsWithInput = b.toLowerCase().startsWith(inputText);
+                
+                if (aStartsWithInput && !bStartsWithInput) return -1;
+                if (!aStartsWithInput && bStartsWithInput) return 1;
+                return 0;
+            });
+            
+            if (matchingTags.length === 0) {
+                suggestionsContainer.classList.add('d-none');
+                return;
+            }
+            
+            // 生成建议列表
+            suggestionsContainer.innerHTML = '';
+            matchingTags.forEach((tag, index) => {
+                const item = document.createElement('div');
+                item.className = 'tag-suggestion-item';
+                item.dataset.tag = tag;
+                
+                // 高亮匹配部分
+                const lowerTag = tag.toLowerCase();
+                const matchStart = lowerTag.indexOf(inputText);
+                const matchEnd = matchStart + inputText.length;
+                
+                let html = '';
+                html += tag.substring(0, matchStart);
+                html += `<span class="match">${tag.substring(matchStart, matchEnd)}</span>`;
+                html += tag.substring(matchEnd);
+                
+                item.innerHTML = html;
+                
+                // 点击事件
+                item.addEventListener('click', () => {
+                    addFilterTag(tag);
+                    suggestionsContainer.classList.add('d-none');
+                });
+                
+                // 鼠标悬停事件
+                item.addEventListener('mouseenter', () => {
+                    clearActiveSuggestion();
+                    item.classList.add('active');
+                    activeIndex = index;
+                });
+                
+                suggestionsContainer.appendChild(item);
+            });
+            
+            // 显示建议
+            suggestionsContainer.classList.remove('d-none');
+            activeIndex = -1;
+        });
+        
+        // 键盘导航
+        tagInput.addEventListener('keydown', (e) => {
+            const suggestions = suggestionsContainer.querySelectorAll('.tag-suggestion-item');
+            
+            // Tab键自动补全
+            if (e.key === 'Tab' && !suggestionsContainer.classList.contains('d-none')) {
+                e.preventDefault();
+                
+                // 如果有激活的建议，使用它
+                if (activeIndex >= 0) {
+                    addFilterTag(suggestions[activeIndex].dataset.tag);
+                } 
+                // 否则使用第一个建议
+                else if (suggestions.length > 0) {
+                    addFilterTag(suggestions[0].dataset.tag);
+                }
+                
+                suggestionsContainer.classList.add('d-none');
+                return;
+            }
+            
+            // 上下键导航
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeIndex = Math.min(activeIndex + 1, suggestions.length - 1);
+                updateActiveSuggestion();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeIndex = Math.max(activeIndex - 1, 0);
+                updateActiveSuggestion();
+            }
+            
+            // Enter键确认选择
+            if (e.key === 'Enter' && activeIndex >= 0) {
+                e.preventDefault();
+                addFilterTag(suggestions[activeIndex].dataset.tag);
+                suggestionsContainer.classList.add('d-none');
+            }
+            
+            // Escape键关闭建议
+            if (e.key === 'Escape') {
+                suggestionsContainer.classList.add('d-none');
+            }
+        });
+        
+        // 更新激活的建议项
+        function updateActiveSuggestion() {
+            const suggestions = suggestionsContainer.querySelectorAll('.tag-suggestion-item');
+            clearActiveSuggestion();
+            
+            if (activeIndex >= 0) {
+                suggestions[activeIndex].classList.add('active');
+                // 滚动到可见区域
+                suggestions[activeIndex].scrollIntoView({ block: 'nearest' });
+            }
+        }
+        
+        // 清除激活状态
+        function clearActiveSuggestion() {
+            suggestionsContainer.querySelectorAll('.tag-suggestion-item').forEach(item => {
+                item.classList.remove('active');
+            });
+        }
+        
+        // 点击外部关闭建议
+        document.addEventListener('click', (e) => {
+            if (!tagInput.contains(e.target) && !suggestionsContainer.contains(e.target)) {
+                suggestionsContainer.classList.add('d-none');
+            }
+        });
+        
+        // 添加按钮点击事件
+        document.getElementById('addTagBtn').addEventListener('click', () => {
+            const inputText = tagInput.value.trim();
+            if (inputText) {
+                addFilterTag(inputText);
+                tagInput.value = '';
+            }
+        });
+    }
+    
     function confirmDelete(filename) {
         document.getElementById('filenameToDelete').textContent = filename;
         document.getElementById('deleteForm').action = "/files/" + encodeURIComponent(filename) + "/delete";
         var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
         deleteModal.show();
     }
+    
+    // 批量操作功能
+    function setupBatchOperations() {
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const fileCheckboxes = document.querySelectorAll('.file-checkbox');
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        const batchEmbedBtn = document.getElementById('batchEmbedBtn');
+        const selectedCountElement = document.getElementById('selectedCount');
+        
+        // 从本地存储加载选中状态
+        loadSelectionFromStorage();
+        
+        // 全选/全不选
+        selectAllCheckbox.addEventListener('change', function() {
+            const isChecked = this.checked;
+            fileCheckboxes.forEach(checkbox => {
+                checkbox.checked = isChecked;
+                // 更新选中状态
+                if (isChecked) {
+                    selectedFiles.add(checkbox.value);
+                } else {
+                    selectedFiles.delete(checkbox.value);
+                }
+            });
+            updateSelectedCount();
+            saveSelectionToStorage();
+        });
+        
+        // 单个复选框改变
+        fileCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                // 更新选中状态集合
+                if (this.checked) {
+                    selectedFiles.add(this.value);
+                } else {
+                    selectedFiles.delete(this.value);
+                }
+                
+                updateSelectedCount();
+                saveSelectionToStorage();
+                
+                // 如果所有文件都被选中，则全选框也选中
+                const allChecked = Array.from(fileCheckboxes).every(cb => cb.checked);
+                selectAllCheckbox.checked = allChecked;
+            });
+        });
+        
+        // 更新选中计数 - 使用全局选中集合
+        function updateSelectedCount() {
+            selectedCountElement.textContent = `已选择: ${selectedFiles.size} 个文件`;
+            
+            // 启用或禁用批量操作按钮
+            batchDeleteBtn.disabled = selectedFiles.size === 0;
+            batchEmbedBtn.disabled = selectedFiles.size === 0;
+        }
+        
+        // 保存选择状态到本地存储
+        function saveSelectionToStorage() {
+            localStorage.setItem('amphilagus_selected_files', JSON.stringify(Array.from(selectedFiles)));
+        }
+        
+        // 从本地存储加载选择状态
+        function loadSelectionFromStorage() {
+            try {
+                const savedSelection = localStorage.getItem('amphilagus_selected_files');
+                if (savedSelection) {
+                    selectedFiles = new Set(JSON.parse(savedSelection));
+                    
+                    // 恢复选中状态到复选框
+                    fileCheckboxes.forEach(checkbox => {
+                        checkbox.checked = selectedFiles.has(checkbox.value);
+                    });
+                    
+                    // 更新计数
+                    updateSelectedCount();
+                }
+            } catch (error) {
+                console.error('加载已选择文件时出错:', error);
+            }
+        }
+        
+        // 批量删除按钮点击事件
+        batchDeleteBtn.addEventListener('click', function() {
+            if (selectedFiles.size === 0) {
+                return;
+            }
+            
+            // 设置批量删除模态框信息
+            document.getElementById('batchDeleteCount').textContent = selectedFiles.size;
+            
+            // 清空并填充待删除文件列表
+            const filesListElement = document.getElementById('filesToDeleteList');
+            filesListElement.innerHTML = '';
+            
+            // 清空并填充提交表单的隐藏字段
+            const filesContainer = document.getElementById('batchDeleteFilesContainer');
+            filesContainer.innerHTML = '';
+            
+            // 添加文件到列表和提交表单
+            Array.from(selectedFiles).forEach(filename => {
+                // 添加到可视列表
+                const fileItem = document.createElement('div');
+                fileItem.className = 'mb-1';
+                fileItem.innerHTML = `<i class="fas fa-file me-2"></i>${filename}`;
+                filesListElement.appendChild(fileItem);
+                
+                // 添加到表单
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'filenames[]';
+                hiddenInput.value = filename;
+                filesContainer.appendChild(hiddenInput);
+            });
+            
+            // 显示确认对话框
+            const batchDeleteModal = new bootstrap.Modal(document.getElementById('batchDeleteModal'));
+            batchDeleteModal.show();
+        });
+        
+        // 批量嵌入按钮点击事件
+        batchEmbedBtn.addEventListener('click', function() {
+            if (selectedFiles.size === 0) {
+                return;
+            }
+            
+            // 设置批量嵌入模态框信息
+            document.getElementById('batchEmbedCount').textContent = selectedFiles.size;
+            
+            // 清空并填充待嵌入文件列表
+            const filesListElement = document.getElementById('filesToEmbedList');
+            filesListElement.innerHTML = '';
+            
+            // 清空并填充提交表单的隐藏字段
+            const filesContainer = document.getElementById('batchEmbedFilesContainer');
+            filesContainer.innerHTML = '';
+            
+            // 添加文件到列表和提交表单
+            Array.from(selectedFiles).forEach(filename => {
+                // 添加到可视列表
+                const fileItem = document.createElement('div');
+                fileItem.className = 'mb-1';
+                fileItem.innerHTML = `<i class="fas fa-file me-2"></i>${filename}`;
+                filesListElement.appendChild(fileItem);
+                
+                // 添加到表单
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'filenames[]';
+                hiddenInput.value = filename;
+                filesContainer.appendChild(hiddenInput);
+            });
+            
+            // 加载集合列表
+            loadCollections();
+            
+            // 显示确认对话框
+            const batchEmbedModal = new bootstrap.Modal(document.getElementById('batchEmbedModal'));
+            batchEmbedModal.show();
+        });
+        
+        // 删除表单提交事件 - 清空存储的选择
+        document.getElementById('batchDeleteForm').addEventListener('submit', function() {
+            // 提交后清空选择状态
+            localStorage.removeItem('amphilagus_selected_files');
+        });
+        
+        // 嵌入开始按钮点击事件
+        document.getElementById('submitEmbedBtn').addEventListener('click', function() {
+            document.getElementById('batchEmbedForm').submit();
+            // 提交后清空选择状态
+            localStorage.removeItem('amphilagus_selected_files');
+        });
+        
+        // 添加清除选择按钮的事件
+        document.getElementById('clearSelectionBtn').addEventListener('click', function() {
+            selectedFiles.clear();
+            fileCheckboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            selectAllCheckbox.checked = false;
+            updateSelectedCount();
+            saveSelectionToStorage();
+        });
+    }
+    
+    // 加载向量数据库集合列表
+    function loadCollections() {
+        const collectionSelect = document.getElementById('collectionSelect');
+        
+        // 清空当前选项（保留第一个默认选项）
+        while (collectionSelect.options.length > 1) {
+            collectionSelect.remove(1);
+        }
+        
+        // 从API获取集合列表
+        fetch('{{ url_for("api_list_collections") }}')
+            .then(response => response.json())
+            .then(collections => {
+                // 添加选项到下拉列表
+                collections.forEach(collection => {
+                    const option = document.createElement('option');
+                    option.value = collection.name;
+                    option.textContent = collection.name;
+                    collectionSelect.appendChild(option);
+                });
+                
+                // 如果没有集合，显示提示
+                if (collections.length === 0) {
+                    const option = document.createElement('option');
+                    option.disabled = true;
+                    option.textContent = '没有可用的集合，请先创建集合';
+                    collectionSelect.appendChild(option);
+                }
+            })
+            .catch(error => {
+                console.error('获取集合列表失败:', error);
+                const option = document.createElement('option');
+                option.disabled = true;
+                option.textContent = '加载集合列表失败';
+                collectionSelect.appendChild(option);
+            });
+    }
+    
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchAllTags();
+        setupTagAutocomplete();
+        setupBatchOperations();
+    });
 </script>
 {% endblock %} 

@@ -233,8 +233,8 @@ class RAGPipelineWrapper:
                     # We don't want to fully initialize just for count, 
                     # maybe rely on a potentially faster method if available or skip
                     # For now, we will skip the count as initializing can be slow
-                    # if self.initialize(name):  # 如果初始化成功
-                    #     document_count = len(self.pipeline.document_store.get_all_documents())  # 获取文档数量
+                    if self.initialize(name):  # 如果初始化成功
+                        document_count = self.pipeline.document_store.count_documents()  # 获取文档数量
                     pass # Skipping count for performance
                 except Exception as count_e:
                     logger.debug(f"Skipped document count for '{name}': {count_e}")
@@ -477,6 +477,19 @@ def extract_research_paper_content(collection_name: str, title: str, soft_match:
     return rag_wrapper.extract_research_paper_content(collection_name, title, soft_match)
     
 if __name__ == "__main__":
+    # 添加命令行参数解析
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='启动MCP服务器')
+    parser.add_argument('--debug', action='store_true', help='启用调试模式（DEBUG级别的日志)')
+    args = parser.parse_args()
+    
+    # 如果指定了--debug参数，将日志级别设置为DEBUG
+    if args.debug:
+        import logging
+        logger.setLevel(logging.DEBUG)
+        logger.debug("已启用DEBUG级别的日志记录")
+    
     # Pre-initialize collections for faster first requests
     logger.info("Starting pre-initialization of collections...")
     try:
@@ -501,5 +514,5 @@ if __name__ == "__main__":
         logger.error(f"Error during pre-initialization: {e}")
 
     # Initialize and run the server
-    logger.info("Starting MCP server with stdio transport")
-    mcp.run(transport='stdio')
+    logger.info("Starting MCP server with sse transport")
+    mcp.run(transport='sse')

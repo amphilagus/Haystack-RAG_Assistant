@@ -1,0 +1,420 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - 全能助手{% endblock %}
+
+{% block header %}全能助手{% endblock %}
+{% block subheader %}基于多工具集成的智能助手{% endblock %}
+
+{% block head_extra %}
+<style>
+    .chat-container {
+        height: 600px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 15px;
+        background-color: #f8f9fa;
+    }
+    .message {
+        margin-bottom: 15px;
+        padding: 10px 15px;
+        border-radius: 10px;
+        max-width: 300%;
+    }
+    .user-message {
+        background-color: #e9ecef;
+        margin-left: auto;
+        text-align: right;
+        word-wrap: break-word;
+    }
+    .assistant-message {
+        background-color: #d1e7dd;
+        margin-right: auto;
+        word-wrap: break-word;
+    }
+    .thinking-message {
+        background-color: #f8f9fa;
+        border: 1px dashed #6c757d;
+        margin-right: auto;
+        word-wrap: break-word;
+    }
+    .message-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 10px;
+        color: white;
+        font-size: 14px;
+    }
+    .user-avatar {
+        background-color: #6c757d;
+    }
+    .assistant-avatar {
+        background-color: #198754;
+    }
+    .message-content {
+        flex: 1;
+    }
+    .message-container {
+        display: flex;
+        align-items: flex-start;
+    }
+    .message-wrapper {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 20px;
+    }
+    .assistant-wrapper {
+        align-items: flex-start;
+    }
+    .user-wrapper {
+        align-items: flex-end;
+    }
+    .message-time {
+        font-size: 0.7em;
+        color: #6c757d;
+        margin-top: 2px;
+    }
+    .model-info {
+        display: inline-block;
+        margin-left: 10px;
+        font-size: 0.9em;
+    }
+    .thinking-dots::after {
+        content: '';
+        animation: thinking 1.5s infinite;
+    }
+    @keyframes thinking {
+        0% { content: '.'; }
+        33% { content: '..'; }
+        66% { content: '...'; }
+        100% { content: '.'; }
+    }
+    .debug-panel {
+        background-color: #f8f9fa;
+        border-color: #6c757d;
+        margin-bottom: 10px;
+    }
+    .debug-message {
+        font-family: monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    .form-check-input.debug-toggle:checked {
+        background-color: #dc3545;
+        border-color: #dc3545;
+    }
+    .debug-badge {
+        font-size: 0.7em;
+        background-color: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mt-2">
+    <div class="col-md-3 mb-3">
+        <!-- 配置面板 -->
+        <div class="card">
+            <div class="card-header bg-primary text-white py-2">
+                <i class="fas fa-cog me-2"></i>配置
+            </div>
+            <div class="card-body">
+                <form id="configForm" method="post" action="{{ url_for('universal_assistant_config') }}">
+                    <!-- API Key 字段已移除，使用环境变量 -->
+                    <div class="alert alert-info mb-3">
+                        <i class="fas fa-info-circle me-2"></i>
+                        使用环境变量中的 OPENAI_API_KEY 访问 OpenAI 服务
+                    </div>
+
+                    <!-- 模型选择 -->
+                    <div class="mb-3">
+                        <label for="modelSelect" class="form-label">LLM 模型</label>
+                        <select class="form-select" id="modelSelect" name="llm_model">
+                            <option value="gpt-4o-mini" {% if current_model == "gpt-4o-mini" %}selected{% endif %}>GPT-4o Mini (快速)</option>
+                            <option value="gpt-3.5-turbo" {% if current_model == "gpt-3.5-turbo" %}selected{% endif %}>GPT-3.5 Turbo (快速)</option>
+                            <option value="gpt-4o" {% if current_model == "gpt-4o" %}selected{% endif %}>GPT-4o (高质量)</option>
+                        </select>
+                    </div>
+
+                    <!-- Debug模式开关 -->
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input debug-toggle" type="checkbox" id="debugMode" name="debug_mode" {% if debug_mode %}checked{% endif %}>
+                            <label class="form-check-label" for="debugMode">
+                                调试模式 {% if debug_mode %}<span class="badge debug-badge">已启用</span>{% endif %}
+                            </label>
+                            <div class="form-text">启用后将显示所有思考过程和工具调用步骤</div>
+                        </div>
+                    </div>
+
+                    <!-- 工具选择 -->
+                    <div class="mb-3">
+                        <label class="form-label">可用工具</label>
+                        <div class="card">
+                            <div class="card-body">
+                                <ul class="list-group list-group-flush">
+                                    {% for tool in available_tools %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        {{ tool }}
+                                        <span class="badge bg-primary rounded-pill">已启用</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="form-text">这些工具能够帮助全能助手回答各类问题和执行任务</div>
+                    </div>
+
+                    <!-- 初始化按钮 -->
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-sync-alt me-2"></i>初始化或更新
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <!-- 聊天界面 -->
+        <div class="card">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center py-2">
+                <div>
+                    <i class="fas fa-comments me-2"></i>对话
+                    <span class="model-info">
+                        <i class="fas fa-robot me-1"></i>{{ current_model|default('未初始化') }}
+                        {% if debug_mode %}
+                        <span class="badge debug-badge">调试模式</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <form method="post" action="{{ url_for('universal_assistant_clear') }}" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-light ms-2">
+                        <i class="fas fa-trash-alt me-1"></i>清空对话
+                    </button>
+                </form>
+            </div>
+            <div class="card-body p-0">
+                <!-- 聊天记录 -->
+                <div class="chat-container" id="chatContainer">
+                    {% if not chat_history %}
+                        <div class="text-center text-muted py-5" id="welcomeMessage">
+                            <i class="fas fa-comment-dots fa-3x mb-3"></i>
+                            <p>全能助手可以帮助您回答各类问题和完成多种任务</p>
+                            <p>包括：查询集合、搜索信息、分析文献等</p>
+                            {% if debug_mode %}
+                            <div class="alert alert-warning">
+                                <i class="fas fa-bug me-2"></i>调试模式已启用，将显示详细的思考步骤
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        {% for message in chat_history %}
+                            <div class="message-wrapper {{ 'user-wrapper' if message.role == 'user' else 'assistant-wrapper' }}">
+                                <div class="message-container">
+                                    {% if message.role != 'user' %}
+                                        <div class="message-avatar assistant-avatar">
+                                            <i class="fas fa-robot"></i>
+                                        </div>
+                                    {% endif %}
+                                    
+                                    <div class="message-content {{ 'text-end' if message.role == 'user' else '' }}">
+                                        <div class="message {{ 'user-message' if message.role == 'user' else 'assistant-message' }}">
+                                            {{ message.content|safe }}
+                                        </div>
+                                        <div class="message-time">
+                                            {{ message.timestamp|datetimeformat }}
+                                        </div>
+                                    </div>
+                                    
+                                    {% if message.role == 'user' %}
+                                        <div class="message-avatar user-avatar ms-2">
+                                            <i class="fas fa-user"></i>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <!-- 输入框 -->
+                <div class="p-3 border-top">
+                    <form id="chatForm" method="post" action="{{ url_for('universal_assistant_chat') }}" class="d-flex">
+                        <input type="text" class="form-control me-2" id="userQuery" name="user_query" 
+                               placeholder="请输入您的问题..." required {{ 'disabled' if not initialized }}>
+                        <button type="submit" class="btn btn-success" id="sendButton" {{ 'disabled' if not initialized }}>
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 滚动到最新消息
+        var chatContainer = document.getElementById('chatContainer');
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        // 激活表单选中的模板样式
+        document.querySelectorAll('.form-check-input').forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                document.querySelectorAll('.form-check').forEach(function(check) {
+                    check.classList.remove('active');
+                });
+                this.closest('.form-check').classList.add('active');
+            });
+        });
+
+        // 处理聊天表单提交
+        var chatForm = document.getElementById('chatForm');
+        var userQueryInput = document.getElementById('userQuery');
+        var welcomeMessage = document.getElementById('welcomeMessage');
+
+        if (chatForm && {{ initialized|tojson }}) {
+            chatForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                var userQuery = userQueryInput.value.trim();
+                if (userQuery === '') return;
+
+                // 隐藏欢迎消息
+                if (welcomeMessage) {
+                    welcomeMessage.style.display = 'none';
+                }
+
+                // 创建用户消息并添加到聊天容器
+                var currentTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                var userMessageHtml = 
+                    '<div class="message-wrapper user-wrapper">' +
+                        '<div class="message-container">' +
+                            '<div class="message-content text-end">' +
+                                '<div class="message user-message">' +
+                                    userQuery +
+                                '</div>' +
+                                '<div class="message-time">' +
+                                    currentTime +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="message-avatar user-avatar ms-2">' +
+                                '<i class="fas fa-user"></i>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
+                chatContainer.insertAdjacentHTML('beforeend', userMessageHtml);
+
+                // 创建"正在思考中"的临时消息
+                var thinkingMessageHtml = 
+                    '<div class="message-wrapper assistant-wrapper" id="thinkingMessage">' +
+                        '<div class="message-container">' +
+                            '<div class="message-avatar assistant-avatar">' +
+                                '<i class="fas fa-robot"></i>' +
+                            '</div>' +
+                            '<div class="message-content">' +
+                                '<div class="message thinking-message">' +
+                                    '<i class="fas fa-spinner fa-spin me-2"></i>正在思考中<span class="thinking-dots"></span>' +
+                                    '{% if debug_mode %}<small class="ms-2 text-muted">(调试模式: 可能需要更长时间)</small>{% endif %}' +
+                                '</div>' +
+                                '<div class="message-time">' +
+                                    currentTime +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
+                chatContainer.insertAdjacentHTML('beforeend', thinkingMessageHtml);
+                
+                // 滚动到最新消息
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                // 清空输入框
+                userQueryInput.value = '';
+                
+                // 禁用发送按钮，防止重复提交
+                document.getElementById('sendButton').disabled = true;
+                
+                // 提交表单到后端
+                fetch("{{ url_for('universal_assistant_chat') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        'user_query': userQuery
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // 移除"正在思考中"的临时消息
+                    document.getElementById('thinkingMessage').remove();
+                    
+                    // 添加助手的实际回复
+                    var assistantMessageHtml =
+                        '<div class="message-wrapper assistant-wrapper">' +
+                            '<div class="message-container">' +
+                                '<div class="message-avatar assistant-avatar">' +
+                                    '<i class="fas fa-robot"></i>' +
+                                '</div>' +
+                                '<div class="message-content">' +
+                                    '<div class="message assistant-message">' +
+                                        data.content +
+                                    '</div>' +
+                                    '<div class="message-time">' +
+                                        new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) +
+                                        (data.is_debug ? ' <small class="text-muted">(调试模式)</small>' : '') +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+                    chatContainer.insertAdjacentHTML('beforeend', assistantMessageHtml);
+                    
+                    // 滚动到最新消息
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    
+                    // 启用发送按钮
+                    document.getElementById('sendButton').disabled = false;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    
+                    // 移除"正在思考中"的临时消息
+                    document.getElementById('thinkingMessage').remove();
+                    
+                    // 添加错误消息
+                    var errorMessageHtml =
+                        '<div class="message-wrapper assistant-wrapper">' +
+                            '<div class="message-container">' +
+                                '<div class="message-avatar assistant-avatar">' +
+                                    '<i class="fas fa-robot"></i>' +
+                                '</div>' +
+                                '<div class="message-content">' +
+                                    '<div class="message assistant-message">' +
+                                        '<span class="text-danger">发生错误，请重试或刷新页面</span>' +
+                                    '</div>' +
+                                    '<div class="message-time">' +
+                                        new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+                    chatContainer.insertAdjacentHTML('beforeend', errorMessageHtml);
+                    
+                    // 滚动到最新消息
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    
+                    // 启用发送按钮
+                    document.getElementById('sendButton').disabled = false;
+                });
+            });
+        }
+    });
+</script>
+{% endblock %} 

@@ -44,7 +44,45 @@
     </div>
 </div>
 
-<div class="row mt-4">
+<div class="row mt-2">
+    <div class="col-md-6">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body">
+                <h2 class="card-title">
+                    <i class="fas fa-book me-2 text-info"></i>RAG 助手
+                </h2>
+                <p class="card-text">基于本地知识库的对话助手，可以智能查询文档内容。</p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="btn-group">
+                        <a href="{{ url_for('rag_assistant') }}" class="btn btn-sm btn-info text-white">使用 RAG 助手</a>
+                    </div>
+                    <small class="text-muted">基于向量检索增强生成</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card mb-4 shadow-sm highlight-card">
+            <div class="card-body">
+                <h2 class="card-title">
+                    <i class="fas fa-magic me-2 text-warning"></i>全能助手
+                </h2>
+                <p class="card-text">基于多工具集成的智能助手，支持多种复杂查询和任务处理。</p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="btn-group">
+                        <a href="{{ url_for('universal_assistant') }}" class="btn btn-sm btn-warning text-white">使用全能助手</a>
+                    </div>
+                    <small class="text-muted">
+                        <span class="badge bg-success">新功能</span>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-2">
     <div class="col-lg-12">
         <div class="card shadow-sm">
             <div class="card-header bg-light">
@@ -78,6 +116,10 @@
                             overflow: hidden;
                             text-overflow: ellipsis;
                             white-space: nowrap;
+                        }
+                        .highlight-card {
+                            border: 2px solid #ffc107;
+                            box-shadow: 0 0.5rem 1rem rgba(255, 193, 7, 0.15) !important;
                         }
                     </style>
                     <div class="table-responsive">

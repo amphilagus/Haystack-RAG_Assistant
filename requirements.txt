@@ -10,6 +10,7 @@ markdown>=3.5.1
 haystack-ai>=2.0.0
 sentence-transformers>=2.2.2
 chroma-haystack>=0.1.2
+mcp-haystack
 
 # Document processing
 pypdf>=3.17.1

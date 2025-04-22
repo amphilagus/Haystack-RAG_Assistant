@@ -53,10 +53,22 @@
                             <i class="fas fa-tasks me-1"></i>任务管理
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('rag_assistant') }}">
-                            <i class="fas fa-robot me-1"></i>RAG 助手
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-robot me-1"></i>智能助手
                         </a>
+                        <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('rag_assistant') }}">
+                                    <i class="fas fa-book me-1"></i>RAG 助手
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('universal_assistant') }}">
+                                    <i class="fas fa-magic me-1"></i>全能助手
+                                </a>
+                            </li>
+                        </ul>
                     </li>
                 </ul>
             </div>

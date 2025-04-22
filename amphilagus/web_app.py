@@ -36,6 +36,9 @@ except ImportError:
     print("Warning: RAG Assistant modules not found. Vector database functions will be limited.")
     RAG_IMPORT_SUCCESS = False
 
+# 导入MCPToolAgent
+from .assistant import MCPToolAgent
+
 # 获取API密钥的函数
 def get_api_key():
     """
@@ -1385,6 +1388,198 @@ def clear_completed_tasks():
     count = task_manager.clear_completed_tasks()
     return jsonify({"success": True, "message": f"已清除 {count} 个已完成的任务"})
 
+
+# 初始化全能助手会话状态
+if 'universal_assistant_session' not in app.config:
+    app.config['universal_assistant_session'] = {
+        'initialized': False,
+        'chat_history': [],
+        'current_model': None,
+        'agent': None,
+        'debug_mode': False  # 添加debug模式状态
+    }
+
+@app.route('/universal_assistant')
+def universal_assistant():
+    """全能助手页面路由"""
+    
+    # 检查环境变量中是否有API密钥
+    api_key = get_api_key()
+    if not api_key:
+        flash('未找到环境变量中的OpenAI API密钥，请设置OPENAI_API_KEY环境变量', 'warning')
+    
+    # 初始化临时代理以获取可用工具
+    available_tools = []
+    try:
+        temp_agent = MCPToolAgent(api_key=api_key)
+        available_tools = temp_agent.get_available_tools()
+    except Exception as e:
+        app.logger.error(f"获取可用工具时出错: {str(e)}")
+        flash(f'无法连接到MCP服务器，请确保MCP服务器正在运行', 'error')
+    
+    # 准备模板变量
+    template_vars = {
+        'current_model': app.config['universal_assistant_session'].get('current_model', 'gpt-4o'),
+        'chat_history': app.config['universal_assistant_session'].get('chat_history', []),
+        'initialized': app.config['universal_assistant_session'].get('initialized', False),
+        'available_tools': available_tools,
+        'debug_mode': app.config['universal_assistant_session'].get('debug_mode', False)  # 传递debug状态到模板
+    }
+    
+    return render_template('universal_assistant.html', **template_vars)
+
+@app.route('/universal_assistant/config', methods=['POST'])
+def universal_assistant_config():
+    """处理全能助手配置更新"""
+    
+    # 检查环境变量中是否有API密钥
+    api_key = get_api_key()
+    if not api_key:
+        flash('未找到环境变量中的OpenAI API密钥，请设置OPENAI_API_KEY环境变量', 'error')
+        return redirect(url_for('universal_assistant'))
+    
+    # 获取表单数据
+    llm_model = request.form.get('llm_model', 'gpt-4o')
+    
+    # 获取debug模式状态
+    debug_mode = request.form.get('debug_mode') == 'on'
+    
+    try:
+        # 初始化MCPToolAgent
+        mcp_agent = MCPToolAgent(
+            model=llm_model,
+            server_url="http://localhost:8000",  # MCP服务器URL
+            api_key=api_key
+        )
+        
+        # 更新会话状态
+        app.config['universal_assistant_session']['agent'] = mcp_agent
+        app.config['universal_assistant_session']['current_model'] = llm_model
+        app.config['universal_assistant_session']['initialized'] = True
+        app.config['universal_assistant_session']['debug_mode'] = debug_mode  # 保存debug模式状态
+        
+        # 获取可用工具
+        available_tools = mcp_agent.get_available_tools()
+        
+        # 包含debug模式状态在消息中
+        debug_info = "（调试模式已启用）" if debug_mode else ""
+        flash(f"全能助手已成功初始化，使用 {llm_model} 模型和 {len(available_tools)} 个工具 {debug_info}", 'success')
+        
+    except Exception as e:
+        app.logger.error(f"初始化全能助手时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        flash(f'初始化全能助手时出错: {str(e)}', 'error')
+    
+    return redirect(url_for('universal_assistant'))
+
+@app.route('/universal_assistant/chat', methods=['POST'])
+def universal_assistant_chat():
+    """处理全能助手聊天请求"""
+    
+    # 检查是否已初始化
+    if not app.config['universal_assistant_session'].get('initialized', False) or app.config['universal_assistant_session'].get('agent') is None:
+        return jsonify({
+            "success": False,
+            "content": "请先初始化全能助手",
+            "timestamp": datetime.datetime.now().isoformat()
+        })
+    
+    # 获取用户查询
+    user_query = request.form.get('user_query', '').strip()
+    if not user_query:
+        return jsonify({
+            "success": False,
+            "content": "请输入有效的问题",
+            "timestamp": datetime.datetime.now().isoformat()
+        })
+    
+    try:
+        # 记录用户消息
+        user_message = {
+            "role": "user",
+            "content": user_query,
+            "timestamp": datetime.datetime.now()
+        }
+        app.config['universal_assistant_session']['chat_history'].append(user_message)
+        
+        # 获取MCPToolAgent和debug模式状态
+        mcp_agent = app.config['universal_assistant_session']['agent']
+        debug_mode = app.config['universal_assistant_session'].get('debug_mode', False)
+        
+        # 生成回答，根据debug模式决定返回内容
+        result = mcp_agent.run(user_query, debug=debug_mode)
+        
+        if debug_mode:
+            # Debug模式：返回所有消息步骤
+            # 处理消息列表并构建HTML
+            debug_content = ""
+            for idx, msg in enumerate(result):
+                role_badge = f'<span class="badge bg-primary">{msg.role}</span>'
+                step_badge = f'<span class="badge bg-secondary">步骤 {idx+1}</span>'
+                content = msg._content
+                debug_content += f'<div class="debug-message mb-2 p-2 border-bottom">{role_badge} {step_badge}<br>{content}</div>'
+            
+            # 记录助手回复
+            assistant_message = {
+                "role": "assistant",
+                "content": f'<div class="debug-panel p-2 border rounded"><h6>调试模式输出：</h6>{debug_content}</div>',
+                "timestamp": datetime.datetime.now()
+            }
+            app.config['universal_assistant_session']['chat_history'].append(assistant_message)
+            
+            # 返回JSON响应
+            return jsonify({
+                "success": True,
+                "content": assistant_message["content"],
+                "timestamp": assistant_message["timestamp"].isoformat(),
+                "is_debug": True
+            })
+        else:
+            # 正常模式：只返回最终回答
+            # 记录助手回复
+            assistant_message = {
+                "role": "assistant",
+                "content": result,
+                "timestamp": datetime.datetime.now()
+            }
+            app.config['universal_assistant_session']['chat_history'].append(assistant_message)
+            
+            # 返回JSON响应
+            return jsonify({
+                "success": True,
+                "content": result,
+                "timestamp": assistant_message["timestamp"].isoformat(),
+                "is_debug": False
+            })
+        
+    except Exception as e:
+        app.logger.error(f"生成回答时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        # 记录错误消息
+        error_message = {
+            "role": "assistant",
+            "content": f"<span class='text-danger'>生成回答时出错: {str(e)}</span>",
+            "timestamp": datetime.datetime.now()
+        }
+        app.config['universal_assistant_session']['chat_history'].append(error_message)
+        
+        # 返回错误JSON响应
+        return jsonify({
+            "success": False,
+            "content": error_message["content"],
+            "timestamp": error_message["timestamp"].isoformat(),
+            "is_debug": False
+        })
+
+@app.route('/universal_assistant/clear', methods=['POST'])
+def universal_assistant_clear():
+    """清空全能助手聊天历史"""
+    app.config['universal_assistant_session']['chat_history'] = []
+    flash('对话历史已清空', 'success')
+    return redirect(url_for('universal_assistant'))
 
 def run_app(host='0.0.0.0', port=5000, debug=False):
     """Run the web application."""

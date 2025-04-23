@@ -10,34 +10,38 @@ import tempfile
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort, send_file
 from werkzeug.utils import secure_filename
+from dotenv import load_dotenv
+import logging
+import uuid
+import re
+import openai
 
-from .main import Amphilagus
-from .file_manager import Tag
-from .task_manager import TaskManager
+from .logger import get_logger
+from .file_manager import FileManager
+from . import config
 
-# 导入PDF处理模块
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rag_assistant.utils.pdf_converter.pdf_to_markdown import convert_pdf_to_markdown
-from rag_assistant.utils.md_cleaner.md_cleaner import clean_markdown
-
-# 导入本地模块
-from .database_manager import DatabaseManager
-
-# 添加RAG Assistant相关导入
+# Import RAG components with fallback
 try:
-    from rag_assistant.utils.pdf_converter.pdf_to_markdown import convert_pdf_to_markdown
-    from rag_assistant.document_loader import load_documents
-    from rag_assistant.rag_pipeline import RAGPipeline
-    from rag_assistant.collection_metadata import get_embedding_model
-    from dotenv import load_dotenv
-    RAG_IMPORT_SUCCESS = True
+    from .rag.document_loader import load_documents
+    from .rag.rag_pipeline import RAGPipeline
+    from .rag.collection_metadata import get_embedding_model
+    HAS_RAG = True
 except ImportError:
-    print("Warning: RAG Assistant modules not found. Vector database functions will be limited.")
-    RAG_IMPORT_SUCCESS = False
+    logger.warning("RAG Assistant modules not found. Vector database functions will be limited.")
+    HAS_RAG = False
 
-# 导入MCPToolAgent
-from .assistant import MCPToolAgent
+# 解决循环引用问题，延迟导入
+def get_task_manager():
+    from .task_manager import TaskManager
+    return TaskManager
+
+def get_database_manager():
+    from .database_manager import DatabaseManager
+    return DatabaseManager
+
+# Configure logger based on environment variable
+logger = get_logger('web_app')
+logger.info("初始化Web应用")
 
 # 获取API密钥的函数
 def get_api_key():
@@ -71,40 +75,90 @@ def get_api_key():
                         os.environ["OPENAI_API_KEY"] = api_key
                         return api_key
     except Exception as e:
-        print(f"Error reading .env file directly: {e}")
+        logger.error(f"Error reading .env file directly: {e}")
     
     return None
 
-# 配置路径 - 正确的配置文件路径
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                          'rag_assistant/utils/md_cleaner/md_cleaner_config.json')
+# 设置工作空间目录 - 优先使用环境变量中的工作空间目录
+config.WORKSPACE_DIR = os.environ.get('AMPHILAGUS_WORKSPACE')
+if config.WORKSPACE_DIR:
+    # 使用环境变量中设置的工作空间目录
+    logger.info(f"使用环境变量设置的工作空间目录: {config.WORKSPACE_DIR}")
+else:
+    # 如果未设置环境变量，则使用默认的项目根目录（仅用于开发环境）
+    config.WORKSPACE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    logger.warning(f"未设置AMPHILAGUS_WORKSPACE环境变量，使用默认目录: {config.WORKSPACE_DIR}")
 
+# 配置文件路径 
+MD_CLEANER_CONFIG_PATH = os.path.join(config.WORKSPACE_DIR, 'configs','md_cleaner_config.json')
+# 标题提取配置路径
+TITLE_EXTRACTOR_CONFIG_PATH = os.path.join(config.WORKSPACE_DIR, 'configs','title_extractor_config.json')
+
+## 数据存储相关路径
 # 设置ChromaDB路径
-CHROMA_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'chroma_db')
+CHROMA_DB_PATH = os.path.join(config.WORKSPACE_DIR, 'chroma_db')
+# 设置files目录
+FILES_DIR = os.path.join(config.WORKSPACE_DIR, 'files')
+# 确保files目录存在
+os.makedirs(FILES_DIR, exist_ok=True)
+# 设置raw_files路径
+RAW_FILES_PATH = os.path.join(FILES_DIR, 'raw_files')
+os.makedirs(RAW_FILES_PATH, exist_ok=True)
+# 设置raw_files_metadata路径
+RAW_FILES_METADATA_PATH = os.path.join(FILES_DIR, 'raw_files_metadata.json')
+# 设置backup_files路径
+BACKUP_FILES_PATH = os.path.join(FILES_DIR, 'backup_files')
+os.makedirs(BACKUP_FILES_PATH, exist_ok=True)
+# 设置tasks路径
+TASKS_PATH = os.path.join(config.WORKSPACE_DIR, 'tasks')
+os.makedirs(TASKS_PATH, exist_ok=True)
+
+# 记录所有路径变量
+logger.debug("Initialized paths:")
+logger.debug(f"MD_CLEANER_CONFIG_PATH: {MD_CLEANER_CONFIG_PATH}")
+logger.debug(f"CHROMA_DB_PATH: {CHROMA_DB_PATH}")
+logger.debug(f"RAW_FILES_PATH: {RAW_FILES_PATH}")
+logger.debug(f"RAW_FILES_METADATA_PATH: {RAW_FILES_METADATA_PATH}")
+logger.debug(f"BACKUP_FILES_PATH: {BACKUP_FILES_PATH}")
+logger.debug(f"TITLE_EXTRACTOR_CONFIG_PATH: {TITLE_EXTRACTOR_CONFIG_PATH}")
 
 # 尝试加载配置文件
 try:
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-            MD_CLEANER_CONFIG = json.load(f)
+    # 加载MD清理配置
+    if os.path.exists(MD_CLEANER_CONFIG_PATH):
+        with open(MD_CLEANER_CONFIG_PATH, 'r', encoding='utf-8') as f:
+            config.MD_CLEANER_CONFIG = json.load(f)
     else:
-        print(f"Warning: MD cleaner config file not found at {CONFIG_PATH}")
-        MD_CLEANER_CONFIG = {}
+        logger.error(f"MD cleaner config file not found at {MD_CLEANER_CONFIG_PATH}")
+        raise FileNotFoundError(f"必需的配置文件未找到: {MD_CLEANER_CONFIG_PATH}")
+        
+    # 加载标题提取配置
+    if os.path.exists(TITLE_EXTRACTOR_CONFIG_PATH):
+        with open(TITLE_EXTRACTOR_CONFIG_PATH, 'r', encoding='utf-8') as f:
+            config.TITLE_EXTRACTOR_CONFIG = json.load(f)
+    else:
+        logger.error(f"Title extractor config file not found at {TITLE_EXTRACTOR_CONFIG_PATH}")
+        raise FileNotFoundError(f"必需的配置文件未找到: {TITLE_EXTRACTOR_CONFIG_PATH}")
+    
+    # 验证配置文件格式
+    if "first_non_empty" not in config.TITLE_EXTRACTOR_CONFIG or "journals" not in config.TITLE_EXTRACTOR_CONFIG["first_non_empty"] or "default" not in config.TITLE_EXTRACTOR_CONFIG["first_non_empty"]["journals"]:
+        raise ValueError("标题提取配置文件结构不正确，缺少 'first_non_empty.journals.default' 路径")
+        
 except Exception as e:
-    print(f"Error loading MD cleaner config: {str(e)}")
-    MD_CLEANER_CONFIG = {}
+    logger.error(f"配置文件加载失败: {str(e)}")
+    raise RuntimeError(f"配置文件加载失败，应用无法启动: {str(e)}")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev_key_replace_in_production')
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max upload
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'raw_data')
+app.config['UPLOAD_FOLDER'] = RAW_FILES_PATH
+
+# 记录Flask应用配置
+logger.debug(f"Flask app initialized with UPLOAD_FOLDER: {app.config['UPLOAD_FOLDER']}")
+logger.debug(f"Flask app MAX_CONTENT_LENGTH: {app.config['MAX_CONTENT_LENGTH']} bytes")
 
 # 允许的文件扩展名
-ALLOWED_EXTENSIONS = {'txt', 'pdf', 'md', 'docx', 'html', 'csv', 'xlsx', 'json', 'xml'}
-
-def allowed_file(filename):
-    """检查文件是否有允许的扩展名"""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'md'}
 
 # 基础类标签定义
 BASE_TAGS = {
@@ -131,28 +185,34 @@ PRESET_SUBTAGS = {
     ]
 }
 
-# Initialize the Amphilagus instance
-amphilagus = Amphilagus()
+# Initialize the FileManager directly
+file_manager = FileManager(raw_files_dir=RAW_FILES_PATH, backup_files_dir=BACKUP_FILES_PATH)
 
 # 初始化数据库管理器
-db_manager = DatabaseManager(chroma_db_path=CHROMA_DB_PATH)
+db_manager = get_database_manager()(chroma_db_path=CHROMA_DB_PATH)
 
 # 初始化任务管理器
-task_manager = None
+try:
+    task_manager = get_task_manager()(TASKS_PATH, file_manager, db_manager)
+    logger.info("Task manager successfully initialized")
+except Exception as e:
+    logger.error(f"Error initializing task manager: {str(e)}")
+    task_manager = None
 
 # 确保基础类标签和预设次级标签存在
 def ensure_base_tags():
-    existing_tags = {tag.name: tag for tag in amphilagus.list_tags()}
+    existing_tags = {tag.name: tag for tag in file_manager.list_tags()}
     
     # 创建/更新基础类标签
     for tag_name, description in BASE_TAGS.items():
         if tag_name not in existing_tags:
-            tag = amphilagus.create_tag(tag_name)
+            tag = file_manager.create_tag(tag_name)
             # 标记为基础类标签，不可删除
             tag.is_base_tag = True
             # 不是预设标签
             if hasattr(tag, 'is_preset_tag'):
                 tag.is_preset_tag = False
+            logger.debug(f"Created base tag: {tag_name}")
         else:
             # 确保现有标签也被标记为基础类
             existing_tags[tag_name].is_base_tag = True
@@ -200,7 +260,7 @@ def ensure_base_tags():
             else:
                 # 创建新的预设次级标签
                 try:
-                    subtag = amphilagus.create_tag(subtag_name, parent_name=parent_name)
+                    subtag = file_manager.create_tag(subtag_name, parent_name=parent_name)
                     # 标记为预设标签
                     subtag.is_preset_tag = True
                     # 不是基础类标签（可删除）
@@ -210,7 +270,7 @@ def ensure_base_tags():
                     continue
     
     # 保存更改
-    amphilagus.file_manager._save_metadata()
+    file_manager._save_metadata()
 
 # 移除 @app.before_first_request 装饰器，改为在应用启动前直接调用
 # 在每个请求前执行初始化检查
@@ -221,7 +281,7 @@ def before_request():
     
     # 延迟初始化任务管理器，确保amphilagus实例已经初始化
     if task_manager is None:
-        task_manager = TaskManager.get_instance(amphilagus=amphilagus)
+        task_manager = get_task_manager().get_instance(amphilagus=file_manager)
     
     # 配置默认日期格式
     if 'datetime' not in app.jinja_env.filters:
@@ -248,7 +308,7 @@ if 'rag_session' not in app.config:
 @app.route('/rag_assistant')
 def rag_assistant():
     """RAG Assistant页面路由"""
-    if not RAG_IMPORT_SUCCESS:
+    if not HAS_RAG:
         flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
         return redirect(url_for('index'))
     
@@ -292,7 +352,7 @@ def rag_assistant():
 @app.route('/rag_assistant/config', methods=['POST'])
 def rag_assistant_config():
     """处理RAG Assistant配置更新"""
-    if not RAG_IMPORT_SUCCESS:
+    if not HAS_RAG:
         flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
         return redirect(url_for('rag_assistant'))
     
@@ -358,9 +418,9 @@ def rag_assistant_config():
     
     return redirect(url_for('rag_assistant'))
 
-def find_backup_file_by_title(title):
+def find_backup_files_by_title(title):
     """
-    通过标题查找backup_data文件夹中可能匹配的文件
+    通过标题查找backup_files文件夹中可能匹配的文件
     
     Args:
         title: 文档标题
@@ -368,11 +428,9 @@ def find_backup_file_by_title(title):
     Returns:
         找到的文件名（如果存在），否则返回None
     """
-    # 构建备份数据文件夹路径
-    backup_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backup_data')
-    
+
     # 如果目录不存在，返回None
-    if not os.path.exists(backup_dir):
+    if not os.path.exists(BACKUP_FILES_PATH):
         return None
     
     # 将标题转换为可能的文件名模式（移除特殊字符）
@@ -381,7 +439,7 @@ def find_backup_file_by_title(title):
     
     # 查找匹配的文件
     matching_files = []
-    for filename in os.listdir(backup_dir):
+    for filename in os.listdir(BACKUP_FILES_PATH):
         file_base = os.path.splitext(filename)[0]
         # 两种匹配方式：1. 正则表达式模糊匹配 2. 标题是文件名的一部分
         if (re.search(title_pattern, file_base, re.IGNORECASE) or 
@@ -397,7 +455,7 @@ def find_backup_file_by_title(title):
 @app.route('/rag_assistant/chat', methods=['POST'])
 def rag_assistant_chat():
     """处理RAG Assistant聊天请求"""
-    if not RAG_IMPORT_SUCCESS:
+    if not HAS_RAG:
         flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
         return redirect(url_for('rag_assistant'))
     
@@ -451,10 +509,10 @@ def rag_assistant_chat():
                 references_html = "<br><br><hr><small><strong>参考文献:</strong><br>"
                 for i, ref in enumerate(references, 1):
                     # 查找匹配的备份文件
-                    backup_file = find_backup_file_by_title(ref)
-                    if backup_file:
+                    backup_files = find_backup_files_by_title(ref)
+                    if backup_files:
                         # 创建链接到备份文件
-                        references_html += f'{i}. <a href="{url_for("view_backup_file", filename=backup_file)}" target="_blank">{ref}</a><br>'
+                        references_html += f'{i}. <a href="{url_for("view_backup_files", filename=backup_files)}" target="_blank">{ref}</a><br>'
                     else:
                         references_html += f"{i}. {ref}<br>"
                 references_html += "</small>"
@@ -502,7 +560,7 @@ def index():
 @app.route('/files')
 def list_files():
     """List all files."""
-    files = amphilagus.list_raw_data()
+    files = file_manager.list_files()
     # Pass BASE_TAGS to template for filtering in the frontend
     return render_template('files.html', files=files, filter_tags=None, exact=False, base_tag_names=list(BASE_TAGS.keys()))
 
@@ -520,25 +578,25 @@ def filter_files():
     
     if not tags:
         # 没有标签，显示所有文件
-        files = amphilagus.list_raw_data()
+        files = file_manager.list_files()
     elif len(tags) == 1:
         # 单个标签过滤，使用现有方法
-        files = amphilagus.get_raw_data_by_tag(tags[0], include_subclasses=not exact)
+        files = file_manager.get_files_by_tag(tags[0], include_subclasses=not exact)
     else:
         # 多个标签过滤 - 使用文件名（可哈希）而不是Metadata对象（不可哈希）
         
         # 获取所有文件作为参考集
-        all_files = {file.filename: file for file in amphilagus.list_raw_data()}
+        all_files = {file.filename: file for file in file_manager.list_files()}
         
         # 获取第一个标签的文件名集合
         first_tag_files = set(file.filename for file in 
-                             amphilagus.get_raw_data_by_tag(tags[0], include_subclasses=not exact))
+                             file_manager.get_files_by_tag(tags[0], include_subclasses=not exact))
         
         # 与其他标签文件名集合求交集
         matching_filenames = first_tag_files
         for tag in tags[1:]:
             tag_filenames = set(file.filename for file in 
-                               amphilagus.get_raw_data_by_tag(tag, include_subclasses=not exact))
+                               file_manager.get_files_by_tag(tag, include_subclasses=not exact))
             matching_filenames = matching_filenames.intersection(tag_filenames)
         
         # 转换回Metadata对象列表
@@ -550,7 +608,7 @@ def filter_files():
 
 # Import the PDF converter
 try:
-    from rag_assistant.utils.pdf_converter.pdf_to_markdown import convert_pdf_to_markdown
+    from .utils.pdf_converter.pdf2md import convert_pdf_to_markdown
     pdf_converter_available = True
 except ImportError:
     app.logger.warning("PDF converter module not available. PDF processing will be disabled.")
@@ -562,7 +620,7 @@ def upload_file():
     """文件上传页面与处理"""
     if request.method == 'GET':
         # 获取标签列表用于显示
-        tags = amphilagus.list_tags()
+        tags = file_manager.list_tags()
         recent_tasks = task_manager.get_recent_tasks(5)
         return render_template('upload.html', tags=tags, recent_tasks=recent_tasks)
     
@@ -583,8 +641,8 @@ def upload_file():
         tags = request.form.get('tags', '')
         description = request.form.get('description', '')
         
-        # 获取PDF处理选项
-        use_llm = request.form.get('use_llm', 'off')
+        # 获取PDF处理选项，默认值改为'on'
+        use_llm = request.form.get('use_llm', 'on')
         clean_md = request.form.get('clean_md', 'off')
         
         # 处理标签
@@ -654,7 +712,7 @@ def upload_file():
 @app.route('/files/<filename>/delete', methods=['POST'])
 def delete_file(filename):
     """Delete a file."""
-    if amphilagus.delete_raw_data(filename):
+    if file_manager.delete_file(filename):
         flash(f'File {filename} deleted successfully')
     else:
         flash(f'Error deleting file {filename}')
@@ -676,7 +734,7 @@ def batch_delete_files():
     
     for filename in filenames:
         try:
-            if amphilagus.delete_raw_data(filename):
+            if file_manager.delete_file(filename):
                 success_count += 1
             else:
                 failed_files.append(filename)
@@ -705,9 +763,19 @@ def batch_embed_files():
         check_duplicates = request.form.get('check_duplicates') == 'on'
         filenames = request.form.getlist('filenames[]')
         
+        # 获取新增参数
+        create_collection = request.form.get('create_collection') == 'on'
+        embedding_model = request.form.get('embedding_model', 'sentence-transformers/all-MiniLM-L6-v2')
+        reset_collection = request.form.get('reset_collection') == 'on'
+        new_collection_name = request.form.get('new_collection_name', '')
+        
+        # 如果是创建新集合，使用新集合名称
+        if create_collection and new_collection_name:
+            collection_name = new_collection_name
+        
         # 验证输入
         if not collection_name:
-            flash('请选择一个向量数据库集合', 'error')
+            flash('请选择或输入一个向量数据库集合名称', 'error')
             return redirect(url_for('list_files'))
         
         if not filenames:
@@ -717,7 +785,7 @@ def batch_embed_files():
         # 获取完整的文件路径
         file_paths = []
         for filename in filenames:
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file_path = os.path.join(RAW_FILES_PATH, filename)
             if os.path.exists(file_path):
                 file_paths.append(file_path)
             else:
@@ -736,12 +804,19 @@ def batch_embed_files():
                 'chunk_overlap': chunk_overlap,
                 'check_duplicates': check_duplicates,
                 'file_paths': file_paths,
-                'filenames': filenames  # 保存原始文件名用于显示
+                'filenames': filenames,  # 保存原始文件名用于显示
+                'create_collection': create_collection,  # 是否创建新集合
+                'embedding_model': embedding_model,  # 嵌入模型
+                'reset_collection': reset_collection  # 是否重置现有集合
             }
         )
         
         # 显示任务创建成功
-        flash(f'批量嵌入任务已创建，将在后台处理 {len(file_paths)} 个文件', 'success')
+        message = f'批量嵌入任务已创建，将在后台处理 {len(file_paths)} 个文件'
+        if create_collection:
+            message += f'，并{"重置" if reset_collection else "创建"}向量集合 "{collection_name}"'
+        
+        flash(message, 'success')
         
         # 重定向到任务查看页面
         return redirect(url_for('view_task', task_id=task.task_id))
@@ -755,7 +830,7 @@ def batch_embed_files():
 @app.route('/files/<filename>/tags', methods=['GET', 'POST'])
 def manage_file_tags(filename):
     """Manage tags for a file."""
-    file_metadata = amphilagus.get_raw_data_metadata(filename)
+    file_metadata = file_manager.get_file_metadata(filename)
     
     if not file_metadata:
         flash(f'File {filename} not found')
@@ -767,13 +842,13 @@ def manage_file_tags(filename):
         tags = [tag.strip() for tag in tags if tag.strip()]
         
         if action == 'add' and tags:
-            if amphilagus.add_tags(filename, tags):
+            if file_manager.add_tags_to_file(filename, tags):
                 flash(f'Tags added to {filename}')
             else:
                 flash(f'Error adding tags to {filename}')
         
         elif action == 'remove' and tags:
-            if amphilagus.remove_tags(filename, tags):
+            if file_manager.remove_tags_from_file(filename, tags):
                 flash(f'Tags removed from {filename}')
             else:
                 flash(f'Error removing tags from {filename}')
@@ -781,51 +856,48 @@ def manage_file_tags(filename):
         return redirect(url_for('manage_file_tags', filename=filename))
     
     # GET request
-    all_tags = amphilagus.list_tags()
+    all_tags = file_manager.list_tags()
     return render_template('file_tags.html', file=file_metadata, all_tags=all_tags)
 
 
 @app.route('/files/<filename>/details')
 def file_details(filename):
     """通过重定向在新页面查看文件"""
-    file_metadata = amphilagus.get_raw_data_metadata(filename)
+    file_metadata = file_manager.get_file_metadata(filename)
     
     if not file_metadata:
         flash(f'文件 {filename} 不存在')
         return redirect(url_for('list_files'))
     
     # 重定向到新的文件查看页面路由
-    return redirect(url_for('view_backup_file', filename=filename))
+    return redirect(url_for('view_backup_files', filename=filename))
 
 @app.route('/files/<filename>/view')
-def view_backup_file(filename):
+def view_backup_files(filename):
     """在新页面中查看备份文件"""
-    # 构建备份数据文件夹路径
-    backup_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'backup_data')
-    
     # 获取文件名（不含扩展名）
     filename_no_ext = os.path.splitext(filename)[0]
     
     # 查找同名文件（可能有不同的扩展名）
     matching_files = []
-    if os.path.exists(backup_dir):
-        for f in os.listdir(backup_dir):
+    if os.path.exists(BACKUP_FILES_PATH):
+        for f in os.listdir(BACKUP_FILES_PATH):
             if os.path.splitext(f)[0] == filename_no_ext:
                 matching_files.append(f)
     
     # 如果找到多个文件，报错
     if len(matching_files) > 1:
-        flash(f'在backup_data中找到多个同名文件: {", ".join(matching_files)}', 'error')
+        flash(f'在backup_files中找到多个同名文件: {", ".join(matching_files)}', 'error')
         return redirect(url_for('list_files'))
     
     # 如果没有找到文件，显示错误
     if not matching_files:
-        flash(f'在backup_data中未找到{filename_no_ext}的文件', 'error')
+        flash(f'在backup_files中未找到{filename_no_ext}的文件', 'error')
         return redirect(url_for('list_files'))
     
     # 构建完整文件路径
-    file_path = os.path.join(backup_dir, matching_files[0])
-    backup_filename = matching_files[0]
+    file_path = os.path.join(BACKUP_FILES_PATH, matching_files[0])
+    backup_filesname = matching_files[0]
     
     # 发送文件
     try:
@@ -833,204 +905,6 @@ def view_backup_file(filename):
     except Exception as e:
         flash(f'打开文件时出错: {str(e)}', 'error')
         return redirect(url_for('list_files'))
-
-
-@app.route('/files/<filename>/update_description', methods=['POST'])
-def update_description(filename):
-    """Update file description."""
-    file_metadata = amphilagus.get_raw_data_metadata(filename)
-    
-    if not file_metadata:
-        flash(f'File {filename} not found')
-        return redirect(url_for('list_files'))
-    
-    new_description = request.form.get('description', '').strip()
-    
-    try:
-        # 更新描述
-        file_metadata.description = new_description
-        amphilagus.file_manager._save_metadata()
-        flash(f'文件描述已更新')
-    except Exception as e:
-        flash(f'更新描述时出错: {str(e)}')
-    
-    return redirect(url_for('file_details', filename=filename))
-
-
-@app.route('/tags')
-def list_tags():
-    """List all tags."""
-    tags = amphilagus.list_tags()
-    # 确保基础类标签已标记
-    ensure_base_tags()
-    return render_template('tags.html', tags=tags)
-
-
-@app.route('/tags/restore_presets', methods=['POST'])
-def restore_preset_tags():
-    """恢复所有预设标签"""
-    # 强制更新所有预设标签
-    ensure_base_tags()
-    flash('已恢复所有预设标签')
-    return redirect(url_for('list_tags'))
-
-
-@app.route('/tags/create', methods=['GET', 'POST'])
-def create_tag():
-    """Create a new tag."""
-    if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        parent = request.form.get('parent', '').strip() or None
-        
-        if not name:
-            flash('标签名称不能为空')
-            return redirect(request.url)
-        
-        # 验证父标签必须是基础类标签之一
-        if not parent:
-            flash('必须选择一个基础类标签作为父标签')
-            return redirect(request.url)
-        
-        try:
-            tag = amphilagus.create_tag(name, parent_name=parent)
-            # 确保新标签不是预设标签和基础类标签
-            tag.is_preset_tag = False
-            tag.is_base_tag = False
-            flash(f'标签 {tag.name} 创建成功')
-            return redirect(url_for('list_tags'))
-        except ValueError as e:
-            flash(f'创建标签错误: {str(e)}')
-            return redirect(request.url)
-    
-    # GET request
-    existing_tags = amphilagus.list_tags()
-    # 确保基础类标签存在
-    ensure_base_tags()
-    # 过滤出基础类标签作为父标签选项
-    base_tags = [tag for tag in existing_tags if hasattr(tag, 'is_base_tag') and tag.is_base_tag and not tag.parent]
-    return render_template('create_tag.html', existing_tags=existing_tags, base_tags=base_tags)
-
-
-@app.route('/tags/<tag_name>/delete', methods=['POST'])
-def delete_tag(tag_name):
-    """Delete a tag."""
-    # 获取标签
-    tag = amphilagus.get_tag(tag_name)
-    
-    if not tag:
-        flash(f'标签 {tag_name} 不存在')
-        return redirect(url_for('list_tags'))
-    
-    # 检查是否是基础类标签，基础类标签不允许删除
-    if hasattr(tag, 'is_base_tag') and tag.is_base_tag:
-        flash(f'基础类标签 {tag_name} 不能删除')
-        return redirect(url_for('list_tags'))
-    
-    # 预设标签可以删除，但会给予提示
-    is_preset = hasattr(tag, 'is_preset_tag') and tag.is_preset_tag
-    
-    # 实现标签删除逻辑
-    try:
-        # 获取所有使用此标签的文件
-        files_with_tag = amphilagus.get_raw_data_by_tag(tag_name)
-        
-        # 从文件中移除此标签
-        for file in files_with_tag:
-            amphilagus.remove_tags(file.filename, [tag_name])
-        
-        # 从标签注册表中删除
-        if hasattr(amphilagus.file_manager, 'delete_tag'):
-            amphilagus.file_manager.delete_tag(tag_name)
-            if is_preset:
-                flash(f'预设标签 {tag_name} 已删除，可通过"恢复预设标签"按钮恢复')
-            else:
-                flash(f'标签 {tag_name} 已删除')
-        else:
-            # 临时方案：如果没有删除方法，则仅从文件中移除
-            flash(f'标签 {tag_name} 已从所有文件中移除，但无法从系统中完全删除')
-    except Exception as e:
-        flash(f'删除标签时出错: {str(e)}')
-    
-    return redirect(url_for('list_tags'))
-
-
-@app.route('/api/files', methods=['GET'])
-def api_list_files():
-    """API endpoint to list files."""
-    files = amphilagus.list_raw_data()
-    return jsonify([file.to_dict() for file in files])
-
-
-@app.route('/api/tags', methods=['GET'])
-def api_list_tags():
-    """API endpoint to list tags."""
-    tags = amphilagus.list_tags()
-    return jsonify([{"name": tag.name, "parent": tag.parent.name if tag.parent else None} for tag in tags])
-
-
-@app.route('/api/collections', methods=['GET'])
-def api_list_collections():
-    """API endpoint to list vector database collections."""
-    try:
-        collections_info = db_manager.list_collections()
-        collections = []
-        
-        for collection_info in collections_info:
-            if collection_info["exists_in_chroma"]:
-                collections.append({
-                    'name': collection_info["name"],
-                    'document_count': collection_info["doc_count"],
-                    'embedding_model': collection_info.get("embedding_model", "Unknown")
-                })
-                
-        return jsonify(collections)
-    except Exception as e:
-        app.logger.error(f"API获取集合列表时出错: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/database')
-def database_dashboard():
-    """数据库管理面板"""
-    try:
-        # 使用db_manager而不是直接调用导入的函数
-        collections_info = db_manager.list_collections()
-        
-        # 获取数据库路径和状态统计
-        chroma_db_path = db_manager.get_db_path()
-        db_stats = db_manager.get_db_stats()
-        
-        # 打印调试信息
-        app.logger.debug(f"从db_manager获取到的集合列表: {collections_info}")
-        
-        if not collections_info:
-            app.logger.warning("未检索到任何集合")
-        
-        # 创建Chroma客户端实例检查
-        if not db_manager.client:
-            app.logger.error("ChromaDB客户端未初始化")
-            return render_template('database.html', 
-                                  collections=[],
-                                  chroma_db_path=chroma_db_path,
-                                  db_stats=db_stats,
-                                  error="ChromaDB客户端未初始化，请检查数据库路径")
-                
-        return render_template('database.html', 
-                              collections=collections_info,
-                              chroma_db_path=chroma_db_path,
-                              db_stats=db_stats,
-                              success=request.args.get('success'),
-                              error=request.args.get('error'))
-    except Exception as e:
-        import traceback
-        app.logger.error(f"读取集合列表时出错: {str(e)}\n{traceback.format_exc()}")
-        return render_template('database.html', 
-                              collections=[],
-                              chroma_db_path=db_manager.get_db_path() if db_manager else "未知",
-                              db_stats={"total_collections": 0, "normal_collections": 0, 
-                                        "missing_metadata": 0, "orphaned_metadata": 0, 
-                                        "total_documents": 0},
-                              error=f"读取集合列表时出错: {str(e)}")
 
 
 @app.route('/database/reload', methods=['POST'])
@@ -1067,7 +941,7 @@ def reload_database():
 def view_collection(collection_name):
     """查看集合详情"""
     try:
-        if not RAG_IMPORT_SUCCESS:
+        if not HAS_RAG:
             return redirect(url_for('database_dashboard', error='RAG模块未导入，无法查看集合'))
         
         # 使用db_manager获取集合详情
@@ -1086,16 +960,16 @@ def view_collection(collection_name):
             doc_count = chroma_collection.count()
             
             # 获取所有文档
-            raw_data = None
+            raw_files = None
             documents = []
             
             # 直接获取所有文档
-            raw_data = chroma_collection.get()
+            raw_files = chroma_collection.get()
             
             # 处理文档数据
-            for i, doc_id in enumerate(raw_data.get("ids", [])):
-                metadata = raw_data.get("metadatas", [])[i] if raw_data.get("metadatas") and i < len(raw_data.get("metadatas", [])) else {}
-                content = raw_data.get("documents", [])[i] if raw_data.get("documents") and i < len(raw_data.get("documents", [])) else ""
+            for i, doc_id in enumerate(raw_files.get("ids", [])):
+                metadata = raw_files.get("metadatas", [])[i] if raw_files.get("metadatas") and i < len(raw_files.get("metadatas", [])) else {}
+                content = raw_files.get("documents", [])[i] if raw_files.get("documents") and i < len(raw_files.get("documents", [])) else ""
                 
                 documents.append({
                     "id": doc_id,
@@ -1192,7 +1066,7 @@ def view_collection(collection_name):
 def edit_collection(collection_name):
     """编辑集合信息"""
     try:
-        if not RAG_IMPORT_SUCCESS:
+        if not HAS_RAG:
             return redirect(url_for('database_dashboard', error='RAG模块未导入，无法编辑集合'))
             
         description = request.form.get('description', '')
@@ -1212,7 +1086,7 @@ def edit_collection(collection_name):
                                   error=f'无法初始化Pipeline: {message}'))
         
         # 更新描述 - 通过collection_utils或直接修改元数据
-        from rag_assistant.collection_metadata import update_collection_metadata
+        from .rag.collection_metadata import update_collection_metadata
         update_collection_metadata(collection_name, {"description": description})
         
         return redirect(url_for('view_collection', 
@@ -1228,7 +1102,7 @@ def edit_collection(collection_name):
 def delete_collection(collection_name):
     """删除集合"""
     try:
-        if not RAG_IMPORT_SUCCESS:
+        if not HAS_RAG:
             return redirect(url_for('database_dashboard', error='RAG模块未导入，无法删除集合'))
         
         # 使用db_manager删除集合
@@ -1298,18 +1172,18 @@ def debug_collection(collection_name):
         if db_manager.client:
             try:
                 chroma_collection = db_manager.client.get_collection(collection_name)
-                raw_data = chroma_collection.get()
+                raw_files = chroma_collection.get()
                 
                 # 获取文档详情结果
                 docs_result = db_manager.get_document_details(collection_name)
                 
                 results = {
                     "collection_details": collection_details,
-                    "chroma_raw_data": {
-                        "ids": raw_data.get("ids", [])[:10],  # 仅显示前10个ID
-                        "metadatas_count": len(raw_data.get("metadatas", [])),
-                        "documents_count": len(raw_data.get("documents", [])),
-                        "sample_metadata": raw_data.get("metadatas", [])[:2] if raw_data.get("metadatas") else []
+                    "chroma_raw_files": {
+                        "ids": raw_files.get("ids", [])[:10],  # 仅显示前10个ID
+                        "metadatas_count": len(raw_files.get("metadatas", [])),
+                        "documents_count": len(raw_files.get("documents", [])),
+                        "sample_metadata": raw_files.get("metadatas", [])[:2] if raw_files.get("metadatas") else []
                     },
                     "document_details_result": {
                         "success": docs_result.get("success"),
@@ -1345,6 +1219,159 @@ def datetimeformat(value, format='%Y-%m-%d %H:%M'):
         except ValueError:
             return value
     return value.strftime(format)
+
+@app.route('/files/<filename>/update_description', methods=['POST'])
+def update_description(filename):
+    """Update file description."""
+    file_metadata = file_manager.get_file_metadata(filename)
+    
+    if not file_metadata:
+        flash(f'File {filename} not found')
+        return redirect(url_for('list_files'))
+    
+    new_description = request.form.get('description', '').strip()
+    
+    try:
+        # 更新描述
+        file_metadata.description = new_description
+        file_manager._save_metadata()
+        flash(f'文件描述已更新')
+    except Exception as e:
+        flash(f'更新描述时出错: {str(e)}')
+    
+    return redirect(url_for('file_details', filename=filename))
+
+
+@app.route('/tags')
+def list_tags():
+    """List all tags."""
+    tags = file_manager.list_tags()
+    # 确保基础类标签已标记
+    ensure_base_tags()
+    return render_template('tags.html', tags=tags)
+
+
+@app.route('/tags/restore_presets', methods=['POST'])
+def restore_preset_tags():
+    """恢复所有预设标签"""
+    # 强制更新所有预设标签
+    ensure_base_tags()
+    flash('已恢复所有预设标签')
+    return redirect(url_for('list_tags'))
+
+
+@app.route('/tags/create', methods=['GET', 'POST'])
+def create_tag():
+    """Create a new tag."""
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        parent = request.form.get('parent', '').strip() or None
+        
+        if not name:
+            flash('标签名称不能为空')
+            return redirect(request.url)
+        
+        # 验证父标签必须是基础类标签之一
+        if not parent:
+            flash('必须选择一个基础类标签作为父标签')
+            return redirect(request.url)
+        
+        try:
+            tag = file_manager.create_tag(name, parent_name=parent)
+            # 确保新标签不是预设标签和基础类标签
+            tag.is_preset_tag = False
+            tag.is_base_tag = False
+            flash(f'标签 {tag.name} 创建成功')
+            return redirect(url_for('list_tags'))
+        except ValueError as e:
+            flash(f'创建标签错误: {str(e)}')
+            return redirect(request.url)
+    
+    # GET request
+    existing_tags = file_manager.list_tags()
+    # 确保基础类标签存在
+    ensure_base_tags()
+    # 过滤出基础类标签作为父标签选项
+    base_tags = [tag for tag in existing_tags if hasattr(tag, 'is_base_tag') and tag.is_base_tag and not tag.parent]
+    return render_template('create_tag.html', existing_tags=existing_tags, base_tags=base_tags)
+
+
+@app.route('/tags/<tag_name>/delete', methods=['POST'])
+def delete_tag(tag_name):
+    """Delete a tag."""
+    # 获取标签
+    tag = file_manager.get_tag(tag_name)
+    
+    if not tag:
+        flash(f'标签 {tag_name} 不存在')
+        return redirect(url_for('list_tags'))
+    
+    # 检查是否是基础类标签，基础类标签不允许删除
+    if hasattr(tag, 'is_base_tag') and tag.is_base_tag:
+        flash(f'基础类标签 {tag_name} 不能删除')
+        return redirect(url_for('list_tags'))
+    
+    # 预设标签可以删除，但会给予提示
+    is_preset = hasattr(tag, 'is_preset_tag') and tag.is_preset_tag
+    
+    # 实现标签删除逻辑
+    try:
+        # 获取所有使用此标签的文件
+        files_with_tag = file_manager.get_files_by_tag(tag_name)
+        
+        # 从文件中移除此标签
+        for file in files_with_tag:
+            file_manager.remove_tags_from_file(file.filename, [tag_name])
+        
+        # 从标签注册表中删除
+        if hasattr(file_manager, 'delete_tag'):
+            file_manager.delete_tag(tag_name)
+            if is_preset:
+                flash(f'预设标签 {tag_name} 已删除，可通过"恢复预设标签"按钮恢复')
+            else:
+                flash(f'标签 {tag_name} 已删除')
+        else:
+            # 临时方案：如果没有删除方法，则仅从文件中移除
+            flash(f'标签 {tag_name} 已从所有文件中移除，但无法从系统中完全删除')
+    except Exception as e:
+        flash(f'删除标签时出错: {str(e)}')
+    
+    return redirect(url_for('list_tags'))
+
+
+@app.route('/api/files', methods=['GET'])
+def api_list_files():
+    """API endpoint to list files."""
+    files = file_manager.list_files()
+    return jsonify([file.to_dict() for file in files])
+
+
+@app.route('/api/tags', methods=['GET'])
+def api_list_tags():
+    """API endpoint to list tags."""
+    tags = file_manager.list_tags()
+    return jsonify([{"name": tag.name, "parent": tag.parent.name if tag.parent else None} for tag in tags])
+
+
+@app.route('/api/collections', methods=['GET'])
+def api_list_collections():
+    """API endpoint to list vector database collections."""
+    try:
+        collections_info = db_manager.list_collections()
+        collections = []
+        
+        for collection_info in collections_info:
+            if collection_info["exists_in_chroma"]:
+                collections.append({
+                    'name': collection_info["name"],
+                    'document_count': collection_info["doc_count"],
+                    'embedding_model': collection_info.get("embedding_model", "Unknown")
+                })
+                
+        return jsonify(collections)
+    except Exception as e:
+        app.logger.error(f"API获取集合列表时出错: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/tasks')
@@ -1581,6 +1608,107 @@ def universal_assistant_clear():
     flash('对话历史已清空', 'success')
     return redirect(url_for('universal_assistant'))
 
+@app.route('/batch_clean', methods=['POST'])
+def batch_clean_files():
+    """批量清洗文件路由"""
+    logger.info("收到批量清洗文件请求")
+    
+    try:
+        # 获取文件列表
+        data = request.get_json()
+        
+        if not data or 'files' not in data or not data['files']:
+            logger.warning("批量清洗请求中没有指定文件")
+            return jsonify({
+                'status': 'error',
+                'message': '未指定要清洗的文件'
+            })
+            
+        files = data['files']
+        logger.info(f"批量清洗文件列表: {files}, 总数: {len(files)}")
+        
+        # 创建批量清洗任务
+        task = task_manager.create_task(
+            task_type='batch_clean',
+            params={
+                'files': files
+            }
+        )
+        
+        logger.info(f"创建了批量清洗任务: {task.task_id}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': '批量清洗任务已创建',
+            'task_id': task.task_id
+        })
+        
+    except Exception as e:
+        logger.error(f"批量清洗文件时发生错误: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'批量清洗出错: {str(e)}'
+        })
+
+@app.route('/reload_config')
+def reload_config():
+    """重新加载配置文件"""
+    global config
+    logger.info("收到重新加载配置文件请求")
+    
+    try:
+        # 记录当前配置的相关信息（用于前后对比）
+        md_config_before = len(config.MD_CLEANER_CONFIG.keys()) if hasattr(config, 'MD_CLEANER_CONFIG') else 0
+        title_config_before = len(config.TITLE_EXTRACTOR_CONFIG.keys()) if hasattr(config, 'TITLE_EXTRACTOR_CONFIG') else 0
+        
+        # 重新加载MD清理配置
+        if os.path.exists(MD_CLEANER_CONFIG_PATH):
+            with open(MD_CLEANER_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                config.MD_CLEANER_CONFIG = json.load(f)
+                logger.info(f"已重新加载MD清理配置文件: {MD_CLEANER_CONFIG_PATH}")
+                # 在调试级别输出完整的配置内容
+                logger.debug(f"MD_CLEANER_CONFIG完整内容: {json.dumps(config.MD_CLEANER_CONFIG, ensure_ascii=False, indent=2)}")
+        else:
+            logger.error(f"MD清理配置文件不存在: {MD_CLEANER_CONFIG_PATH}")
+            flash(f"MD清理配置文件不存在: {MD_CLEANER_CONFIG_PATH}", "danger")
+            return redirect(request.referrer or url_for('index'))
+        
+        # 重新加载标题提取配置
+        if os.path.exists(TITLE_EXTRACTOR_CONFIG_PATH):
+            with open(TITLE_EXTRACTOR_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                config.TITLE_EXTRACTOR_CONFIG = json.load(f)
+                logger.info(f"已重新加载标题提取配置文件: {TITLE_EXTRACTOR_CONFIG_PATH}")
+                # 在调试级别输出完整的配置内容
+                logger.debug(f"TITLE_EXTRACTOR_CONFIG完整内容: {json.dumps(config.TITLE_EXTRACTOR_CONFIG, ensure_ascii=False, indent=2)}")
+        else:
+            logger.error(f"标题提取配置文件不存在: {TITLE_EXTRACTOR_CONFIG_PATH}")
+            flash(f"标题提取配置文件不存在: {TITLE_EXTRACTOR_CONFIG_PATH}", "danger")
+            return redirect(request.referrer or url_for('index'))
+        
+        # 验证配置文件格式
+        if "default" not in config.TITLE_EXTRACTOR_CONFIG.get("first_non_empty", {}).get("journals", {}):
+            error_msg = "标题提取配置文件缺少 'first_non_empty.journals.default' 策略"
+            logger.error(error_msg)
+            flash(error_msg, "danger")
+            return redirect(request.referrer or url_for('index'))
+        
+        # 记录配置变化
+        md_config_after = len(config.MD_CLEANER_CONFIG.keys())
+        title_config_after = len(config.TITLE_EXTRACTOR_CONFIG.keys())
+        
+        # 显示成功信息以及配置变化情况
+        success_msg = f"配置文件已重新加载。MD清理配置: {md_config_before} → {md_config_after}, 标题提取配置: {title_config_before} → {title_config_after}"
+        logger.info(success_msg)
+        flash(success_msg, "success")
+        
+    except Exception as e:
+        error_msg = f"重新加载配置文件时出错: {str(e)}"
+        logger.error(error_msg)
+        flash(error_msg, "danger")
+    
+    # 重定向回之前的页面或首页
+    return redirect(request.referrer or url_for('index'))
+
 def run_app(host='0.0.0.0', port=5000, debug=False):
     """Run the web application."""
     # Create instance path for temporary files
@@ -1588,6 +1716,88 @@ def run_app(host='0.0.0.0', port=5000, debug=False):
     # 确保基础类标签存在
     ensure_base_tags()
     app.run(host=host, port=port, debug=debug)
+
+@app.route('/files/<filename>/rename', methods=['POST'])
+def rename_file(filename):
+    """重命名文件"""
+    logger.info(f"收到重命名文件请求: {filename}")
+    
+    new_filename = request.form.get('new_filename', '').strip()
+    
+    if not new_filename:
+        flash('新文件名不能为空', 'error')
+        return redirect(url_for('list_files'))
+    
+    # 保留原文件扩展名
+    old_ext = os.path.splitext(filename)[1]
+    new_ext = os.path.splitext(new_filename)[1]
+    
+    # 如果新文件名没有扩展名，使用原文件的扩展名
+    if not new_ext and old_ext:
+        new_filename = f"{new_filename}{old_ext}"
+        logger.debug(f"添加原文件扩展名: {new_filename}")
+    
+    # 验证新文件名
+    if not new_filename or not new_filename.strip():
+        flash('新文件名不能为空', 'error')
+        return redirect(url_for('list_files'))
+    
+    # 确保文件名有效且扩展名相同
+    if not config.allowed_file(new_filename):
+        flash('文件扩展名必须是允许的类型', 'error')
+        return redirect(url_for('list_files'))
+    
+    # 文件重命名操作
+    if file_manager.rename_file(filename, new_filename):
+        flash(f'文件 {filename} 成功重命名为 {new_filename}', 'success')
+    else:
+        flash(f'重命名文件 {filename} 失败', 'error')
+    
+    return redirect(url_for('list_files'))
+
+
+@app.route('/database')
+def database_dashboard():
+    """数据库管理面板"""
+    try:
+        # 使用db_manager而不是直接调用导入的函数
+        collections_info = db_manager.list_collections()
+        
+        # 获取数据库路径和状态统计
+        chroma_db_path = db_manager.get_db_path()
+        db_stats = db_manager.get_db_stats()
+        
+        # 打印调试信息
+        app.logger.debug(f"从db_manager获取到的集合列表: {collections_info}")
+        
+        if not collections_info:
+            app.logger.warning("未检索到任何集合")
+        
+        # 创建Chroma客户端实例检查
+        if not db_manager.client:
+            app.logger.error("ChromaDB客户端未初始化")
+            return render_template('database.html', 
+                                  collections=[],
+                                  chroma_db_path=chroma_db_path,
+                                  db_stats=db_stats,
+                                  error="ChromaDB客户端未初始化，请检查数据库路径")
+                
+        return render_template('database.html', 
+                              collections=collections_info,
+                              chroma_db_path=chroma_db_path,
+                              db_stats=db_stats,
+                              success=request.args.get('success'),
+                              error=request.args.get('error'))
+    except Exception as e:
+        import traceback
+        app.logger.error(f"读取集合列表时出错: {str(e)}\n{traceback.format_exc()}")
+        return render_template('database.html', 
+                              collections=[],
+                              chroma_db_path=db_manager.get_db_path() if db_manager else "未知",
+                              db_stats={"total_collections": 0, "normal_collections": 0, 
+                                        "missing_metadata": 0, "orphaned_metadata": 0, 
+                                        "total_documents": 0},
+                              error=f"读取集合列表时出错: {str(e)}")
 
 
 if __name__ == '__main__':

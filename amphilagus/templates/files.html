@@ -13,7 +13,7 @@
         {% if exact %}（精确匹配）{% else %}（包含子类）{% endif %}
         <a href="{{ url_for('list_files') }}" class="btn btn-sm btn-outline-secondary ms-2">查看全部文件</a>
     {% else %}
-        管理 raw_data 文件
+        管理 raw_files 文件
     {% endif %}
 {% endblock %}
 
@@ -81,6 +81,10 @@
     
     <button type="button" class="btn btn-sm btn-primary" id="batchEmbedBtn" disabled data-bs-toggle="modal" data-bs-target="#batchEmbedModal">
         <i class="bi bi-database"></i> 批量嵌入
+    </button>
+    
+    <button type="button" class="btn btn-sm btn-success" id="batchCleanBtn" disabled data-bs-toggle="modal" data-bs-target="#batchCleanModal">
+        <i class="bi bi-brush"></i> 批量清洗
     </button>
 </div>
 
@@ -209,6 +213,10 @@
                                 <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info" title="管理标签">
                                     <i class="fas fa-tags"></i>
                                 </a>
+                                <button type="button" class="btn btn-outline-secondary" title="重命名文件" 
+                                        onclick="showRenameModal('{{ file.filename }}')">
+                                    <i class="fas fa-edit"></i>
+                                </button>
                                 <button type="button" class="btn btn-outline-danger" title="删除文件" 
                                         onclick="confirmDelete('{{ file.filename }}')">
                                     <i class="fas fa-trash"></i>
@@ -291,12 +299,42 @@
             <div class="modal-body">
                 <form id="batchEmbedForm" method="post" action="{{ url_for('batch_embed_files') }}">
                     <div class="mb-3">
-                        <label for="collectionSelect" class="form-label">选择向量数据库集合</label>
-                        <select class="form-select" id="collectionSelect" name="collection_name" required>
-                            <option value="" selected disabled>请选择集合...</option>
-                            <!-- 集合列表会通过Ajax加载 -->
-                        </select>
-                        <div class="form-text">选择要将文件嵌入的目标向量数据库集合。</div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="createCollectionCheckbox" name="create_collection">
+                            <label class="form-check-label" for="createCollectionCheckbox">创建新集合</label>
+                        </div>
+                        
+                        <div id="existingCollectionGroup">
+                            <label for="collectionSelect" class="form-label">选择向量数据库集合</label>
+                            <select class="form-select" id="collectionSelect" name="collection_name" required>
+                                <option value="" selected disabled>请选择集合...</option>
+                                <!-- 集合列表会通过Ajax加载 -->
+                            </select>
+                            <div class="form-text">选择要将文件嵌入的目标向量数据库集合。</div>
+                        </div>
+                        
+                        <div id="newCollectionGroup" style="display: none;">
+                            <label for="newCollectionName" class="form-label">新集合名称</label>
+                            <input type="text" class="form-control" id="newCollectionName" name="new_collection_name" placeholder="输入新集合名称">
+                            <div class="form-text">请输入新集合的名称，不能与现有集合重名。</div>
+                            
+                            <div class="mt-2">
+                                <label for="embeddingModelSelect" class="form-label">嵌入模型</label>
+                                <select class="form-select" id="embeddingModelSelect" name="embedding_model">
+                                    <option value="sentence-transformers/all-MiniLM-L6-v2" selected>all-MiniLM-L6-v2 (默认)</option>
+                                    <option value="BAAI/bge-large-en-v1.5" selected>bge-large-en-v1.5 (英文高精度)</option>
+                                    <option value="sentence-transformers/multi-qa-mpnet-base-dot-v1">multi-qa-mpnet-base-dot-v1 (高精度)</option>
+                                    <option value="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2">paraphrase-multilingual-MiniLM-L12-v2 (多语言)</option>
+                                </select>
+                                <div class="form-text">选择用于向量化文档的嵌入模型，创建后不可更改。</div>
+                            </div>
+                            
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="resetCollectionCheckbox" name="reset_collection">
+                                <label class="form-check-label" for="resetCollectionCheckbox">重置已存在的同名集合</label>
+                                <div class="form-text text-danger">警告：这将删除集合中的所有现有文档！</div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
@@ -332,6 +370,60 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button type="button" class="btn btn-primary" id="submitEmbedBtn">开始嵌入</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Batch Clean Modal -->
+<div class="modal fade" id="batchCleanModal" tabindex="-1" aria-labelledby="batchCleanModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="batchCleanModalLabel">批量清洗文件</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要根据文件标签清洗以下 <span id="batchCleanCount"></span> 个文件吗？</p>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    只有应用了相应期刊类型标签的Markdown文件会被清洗。
+                </div>
+                <div id="filesToCleanList" class="mt-3" style="max-height: 200px; overflow-y: auto;"></div>
+                <div id="batchCleanFilesContainer" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-success" id="submitCleanBtn">开始清洗</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rename File Modal -->
+<div class="modal fade" id="renameModal" tabindex="-1" aria-labelledby="renameModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="renameModalLabel">重命名文件</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="renameForm" method="post" action="">
+                    <div class="mb-3">
+                        <label for="currentFilename" class="form-label">当前文件名</label>
+                        <input type="text" class="form-control" id="currentFilename" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="newFilename" class="form-label">新文件名</label>
+                        <input type="text" class="form-control" id="newFilename" name="new_filename" required>
+                        <div class="form-text">如果不指定扩展名，将保留原文件的扩展名。</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary">重命名</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -592,6 +684,7 @@
         const fileCheckboxes = document.querySelectorAll('.file-checkbox');
         const batchDeleteBtn = document.getElementById('batchDeleteBtn');
         const batchEmbedBtn = document.getElementById('batchEmbedBtn');
+        const batchCleanBtn = document.getElementById('batchCleanBtn');
         const selectedCountElement = document.getElementById('selectedCount');
         
         // 从本地存储加载选中状态
@@ -639,6 +732,7 @@
             // 启用或禁用批量操作按钮
             batchDeleteBtn.disabled = selectedFiles.size === 0;
             batchEmbedBtn.disabled = selectedFiles.size === 0;
+            batchCleanBtn.disabled = selectedFiles.size === 0;
         }
         
         // 保存选择状态到本地存储
@@ -745,17 +839,95 @@
             batchEmbedModal.show();
         });
         
-        // 删除表单提交事件 - 清空存储的选择
-        document.getElementById('batchDeleteForm').addEventListener('submit', function() {
-            // 提交后清空选择状态
-            localStorage.removeItem('amphilagus_selected_files');
+        // 批量清洗按钮点击事件
+        batchCleanBtn.addEventListener('click', function() {
+            if (selectedFiles.size === 0) {
+                return;
+            }
+            
+            // 设置批量清洗模态框信息
+            document.getElementById('batchCleanCount').textContent = selectedFiles.size;
+            
+            // 清空并填充待清洗文件列表
+            const filesListElement = document.getElementById('filesToCleanList');
+            filesListElement.innerHTML = '';
+            
+            // 清空并填充提交数据的隐藏容器
+            const filesContainer = document.getElementById('batchCleanFilesContainer');
+            filesContainer.innerHTML = '';
+            
+            // 添加文件到列表
+            Array.from(selectedFiles).forEach(filename => {
+                // 添加到可视列表
+                const fileItem = document.createElement('div');
+                fileItem.className = 'mb-1';
+                fileItem.innerHTML = `<i class="fas fa-file me-2"></i>${filename}`;
+                filesListElement.appendChild(fileItem);
+            });
+            
+            // 显示确认对话框
+            const batchCleanModal = new bootstrap.Modal(document.getElementById('batchCleanModal'));
+            batchCleanModal.show();
         });
         
-        // 嵌入开始按钮点击事件
-        document.getElementById('submitEmbedBtn').addEventListener('click', function() {
-            document.getElementById('batchEmbedForm').submit();
-            // 提交后清空选择状态
-            localStorage.removeItem('amphilagus_selected_files');
+        // 清洗开始按钮点击事件
+        document.getElementById('submitCleanBtn').addEventListener('click', function() {
+            // 禁用按钮，防止重复点击
+            this.disabled = true;
+            this.textContent = '处理中...';
+            
+            // 准备数据
+            const data = {
+                files: Array.from(selectedFiles)
+            };
+            
+            // 发送请求
+            fetch('/batch_clean', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                // 关闭模态框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('batchCleanModal'));
+                modal.hide();
+                
+                // 显示结果
+                if (result.status === 'success') {
+                    // 创建成功提示
+                    showAlert('success', '批量清洗任务已创建，请在任务页面查看进度');
+                    
+                    // 清空选择状态
+                    selectedFiles.clear();
+                    document.querySelectorAll('.file-checkbox').forEach(checkbox => {
+                        checkbox.checked = false;
+                    });
+                    document.getElementById('selectAllCheckbox').checked = false;
+                    updateSelectedCount();
+                    saveSelectionToStorage();
+                    
+                    // 跳转到任务详情页面
+                    if (result.task_id) {
+                        window.location.href = `/tasks/${result.task_id}`;
+                    }
+                } else {
+                    // 创建错误提示
+                    showAlert('danger', `创建清洗任务失败: ${result.message}`);
+                }
+            })
+            .catch(error => {
+                console.error('清洗请求出错:', error);
+                showAlert('danger', '清洗请求发生错误，请查看控制台了解详情。');
+            })
+            .finally(() => {
+                // 重置按钮状态
+                const button = document.getElementById('submitCleanBtn');
+                button.disabled = false;
+                button.textContent = '开始清洗';
+            });
         });
         
         // 添加清除选择按钮的事件
@@ -808,11 +980,118 @@
             });
     }
     
+    // 添加显示提示信息的函数
+    function showAlert(type, message, details = '') {
+        const alertContainer = document.createElement('div');
+        alertContainer.className = `alert alert-${type} alert-dismissible fade show`;
+        alertContainer.setAttribute('role', 'alert');
+        
+        let alertContent = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2"></i>${message}`;
+        
+        if (details) {
+            alertContent += `<br><small>${details}</small>`;
+        }
+        
+        alertContainer.innerHTML = alertContent + 
+            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+        
+        // 添加到页面顶部
+        const contentDiv = document.querySelector('.container');
+        contentDiv.insertBefore(alertContainer, contentDiv.firstChild);
+        
+        // 5秒后自动关闭
+        setTimeout(() => {
+            alertContainer.classList.remove('show');
+            setTimeout(() => alertContainer.remove(), 500);
+        }, 5000);
+    }
+    
     // 初始化
     document.addEventListener('DOMContentLoaded', () => {
         fetchAllTags();
         setupTagAutocomplete();
         setupBatchOperations();
+        setupEmbedModal();
     });
+
+    // 初始化批量嵌入模态框
+    function setupEmbedModal() {
+        // 切换新集合/已有集合表单
+        const createCollectionCheckbox = document.getElementById('createCollectionCheckbox');
+        const existingCollectionGroup = document.getElementById('existingCollectionGroup');
+        const newCollectionGroup = document.getElementById('newCollectionGroup');
+        const collectionSelect = document.getElementById('collectionSelect');
+        const newCollectionName = document.getElementById('newCollectionName');
+        
+        createCollectionCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                existingCollectionGroup.style.display = 'none';
+                newCollectionGroup.style.display = 'block';
+                collectionSelect.required = false;
+                newCollectionName.required = true;
+            } else {
+                existingCollectionGroup.style.display = 'block';
+                newCollectionGroup.style.display = 'none';
+                collectionSelect.required = true;
+                newCollectionName.required = false;
+            }
+        });
+        
+        // 提交表单按钮点击事件
+        document.getElementById('submitEmbedBtn').addEventListener('click', function() {
+            // 禁用按钮，防止重复点击
+            this.disabled = true;
+            this.textContent = '处理中...';
+            
+            const form = document.getElementById('batchEmbedForm');
+            const createCollection = document.getElementById('createCollectionCheckbox').checked;
+            
+            // 验证表单
+            let isValid = true;
+            let errorMessage = '';
+            
+            if (createCollection) {
+                const newName = document.getElementById('newCollectionName').value.trim();
+                if (!newName) {
+                    isValid = false;
+                    errorMessage = '请输入新集合名称';
+                }
+                // 使用隐藏字段传递集合名称
+                document.getElementById('collectionSelect').value = newName;
+            } else {
+                const selectedCollection = document.getElementById('collectionSelect').value;
+                if (!selectedCollection) {
+                    isValid = false;
+                    errorMessage = '请选择一个集合';
+                }
+            }
+            
+            if (!isValid) {
+                showAlert('danger', errorMessage);
+                this.disabled = false;
+                this.textContent = '开始嵌入';
+                return;
+            }
+            
+            // 提交表单
+            form.submit();
+        });
+    }
+
+    function showRenameModal(filename) {
+        // 设置当前文件名
+        document.getElementById('currentFilename').value = filename;
+        
+        // 设置默认的新文件名（不含扩展名）
+        const nameWithoutExt = filename.split('.').slice(0, -1).join('.');
+        document.getElementById('newFilename').value = nameWithoutExt;
+        
+        // 设置表单提交地址
+        document.getElementById('renameForm').action = "/files/" + encodeURIComponent(filename) + "/rename";
+        
+        // 显示模态框
+        const modal = new bootstrap.Modal(document.getElementById('renameModal'));
+        modal.show();
+    }
 </script>
 {% endblock %} 

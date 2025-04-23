@@ -1,23 +1,31 @@
-# Haystack RAG Assistant
+# Amphilagus - 文档管理与RAG助手系统
 
-基于Haystack框架的本地知识库检索增强生成系统，支持中英文文档检索和问答。
+Amphilagus是一个基于Web界面的文档管理和检索增强生成(RAG)系统，专为管理学术文档和知识库而设计。
 
 ## 功能特点
 
-- **文档导入**：支持PDF、TXT、DOCX、MD、HTML等多种格式文档导入，递归扫描所有子目录
-- **多语言支持**：集成多种嵌入模型，包括专为中文优化的BAAI/bge系列模型
+- **文档管理**：支持PDF、TXT、DOCX、MD、HTML等多种格式文档导入与管理
+- **标签分类系统**：强大的分级标签系统，用于组织和分类文档，支持标签继承关系
+- **多语言支持**：集成多种嵌入模型，包括专为中文优化的模型
 - **持久化存储**：基于ChromaDB的向量数据库，保存文档嵌入和元数据
 - **集合管理**：支持创建和管理多个知识库集合，适用于不同主题或项目
-- **命令行和Web界面**：同时提供CLI和用户友好的Web界面
+- **用户友好的Web界面**：直观的Web界面，易于使用
 - **先进语言模型**：支持OpenAI最新的GPT-4o、GPT-4o-mini等模型
 - **自动嵌入模型匹配**：自动记录集合使用的嵌入模型，确保检索一致性
-- **多层级文档组织**：支持递归扫描和加载多级目录结构中的文档
+- **批量处理**：支持后台批量处理文档上传和向量嵌入任务
+
+## 技术栈
+
+- **后端**：Flask 框架
+- **前端**：Bootstrap 5 + jQuery
+- **数据存储**：JSON 文件存储元数据，ChromaDB存储向量嵌入
+- **AI模型**：集成OpenAI API和多种嵌入模型
 
 ## 安装指南
 
 ### 前提条件
 
-- Python 3.8+
+- Python 3.11+
 - 有效的OpenAI API密钥
 - [uv](https://github.com/astral-sh/uv) 包管理器 (可选但推荐)
 
@@ -26,8 +34,8 @@
 1. 克隆仓库：
 
 ```bash
-git clone https://github.com/yourusername/haystack-rag.git
-cd haystack-rag
+git clone https://github.com/yourusername/amphilagus.git
+cd amphilagus
 ```
 
 2. 使用uv创建并激活虚拟环境：
@@ -48,149 +56,122 @@ source .venv/bin/activate
 .\.venv\Scripts\Activate.ps1
 ```
 
-3. 使用uv安装依赖：
+3. 安装包及依赖：
 
 ```bash
-# 安装项目依赖
-uv pip install -r requirements.txt
+# 开发模式安装（推荐）
+uv pip install -e ".[dev,web]"
 
-# 安装mcp和httpx
-uv add mcp[cli] httpx
+# 或使用普通安装
+uv pip install .
 ```
 
 4. 配置API密钥：
    - 在项目根目录创建`.env`文件
    - 添加您的OpenAI API密钥：`OPENAI_API_KEY=your_api_key_here`
+   - 添加Flask密钥：`FLASK_SECRET_KEY=your_secret_key_here`
 
-## 使用说明
+### 运行Web应用
 
-### 命令行界面
-
-```bash
-# Windows PowerShell
-.\run_cli.ps1
-
-# Linux/Mac
-python rag_assistant/main.py --interface cli
-```
-
-### Web界面
+安装后，可以通过以下方式启动web应用：
 
 ```bash
-# Windows PowerShell
-cd 项目根目录
-python rag_assistant/main.py --interface web
+# 使用入口点启动（推荐）
+amphilagus-web
 
-# 或使用streamlit直接运行
-streamlit run rag_assistant/web_app.py
+# 或直接通过Python模块启动
+python -m amphilagus.web_app
+
+# 或使用运行脚本
+python run_web_app.py
 ```
 
-### 添加文档
+Web界面将在以下地址可访问：http://localhost:5000
 
-1. 将文档放入`raw_data`目录（可以创建子目录组织文档）
-   - 系统会自动递归扫描所有子目录并加载其中的文档
-   - 支持的格式：PDF、TXT、DOCX、MD、HTML
-2. 通过CLI或Web界面选择导入文档
-3. 选择适合文档语言的嵌入模型（中文推荐使用BAAI/bge模型）
-
-### 集合管理
-
-- 使用不同名称的集合来组织不同主题的知识库
-- 可以随时重置或创建新集合
-- 系统会自动记录集合的嵌入模型信息，确保检索一致性
-
-## 项目结构
+## 目录结构
 
 ```
-haystack-rag/
-├── rag_assistant/       # 主要代码目录
-│   ├── collection_metadata.py  # 集合元数据管理
-│   ├── collection_utils.py     # 集合工具函数
-│   ├── custom_document_store.py # 自定义文档存储
-│   ├── document_loader.py      # 文档加载和处理
-│   ├── main.py                 # 主入口
-│   ├── rag_pipeline.py         # RAG管道实现
-│   └── web_app.py              # Web界面
-├── raw_data/            # 原始文档目录（需手动创建）
-├── chroma_db/           # ChromaDB数据存储（自动创建）
-├── collection_metadata.json  # 集合元数据（自动创建）
-├── requirements.txt     # 项目依赖
-├── run_cli.ps1          # Windows PowerShell启动脚本
-├── run_web.ps1          # Web界面启动脚本
-├── convert_pdf.ps1      # PDF转MD脚本
-└── .env                 # 环境变量（需手动创建）
+amphilagus/
+├── __init__.py          # 包初始化
+├── file_manager.py      # 文件管理核心模块
+├── database_manager.py  # 数据库管理模块
+├── task_manager.py      # 任务管理器模块
+├── assistant.py         # AI助手模块
+├── web_app.py           # Web应用路由和控制器
+├── templates/           # HTML模板
+│   ├── base.html        # 基础模板
+│   ├── home.html        # 首页
+│   └── ...              # 其他页面模板
+└── static/              # 静态资源
+    ├── css/             # CSS样式
+    ├── js/              # JavaScript脚本
+    └── img/             # 图片资源
 ```
 
-## 注意事项
+## 数据目录
 
-- 首次运行Web界面时，需要初始化管道并加载文档
-- 选择嵌入模型时注意匹配文档语言（中文推荐BGE或M3E模型）
-- 大型文档集合的嵌入过程可能需要一些时间
-- 确保OpenAI API密钥有足够的额度
-
-## PDF转换工具
-
-项目内置了PDF到Markdown的转换工具，基于[Marker](https://github.com/VikParuchuri/marker)库，支持OCR功能。
-
-### 主要功能
-
-- 将PDF文档转换为格式化的Markdown文本
-- 支持多语言OCR识别扫描文档
-- 可自定义批处理大小以优化不同硬件的性能
-- 支持限制处理特定页面范围
-- 支持批量处理整个文件夹中的PDF文件
-- 支持并行处理多个PDF文件提高效率
-- **LLM增强**：使用语言模型提高转换质量（需要在.env文件中配置Google API密钥）
-
-### 使用方法
+首次运行应用程序前，请确保创建以下目录：
 
 ```bash
-# 处理单个PDF文件
-python rag_assistant/pdf_to_markdown.py "文档路径.pdf" "输出目录" [选项]
-
-# 批量处理整个目录中的PDF文件
-python rag_assistant/pdf_to_markdown.py "PDF文件夹路径" "输出目录" --workers 4 [选项]
-
-# 使用LLM增强功能转换
-python rag_assistant/pdf_to_markdown.py "文档路径.pdf" "输出目录" --use_llm
+mkdir -p raw_data backup_data chroma_db tasks
 ```
 
-#### 通用选项
-- `--batch_multiplier <值>`: 批处理大小倍数(默认: 2)，增加可提高速度但需要更多VRAM
-- `--langs "<语言>"`: OCR识别的语言，逗号分隔(例如 "en,zh,fr")
-- `--use_llm`: 使用语言模型增强，提高转换质量（需要Google API密钥）
+- `raw_data`：原始文档文件存储目录
+- `backup_data`：文档备份目录
+- `chroma_db`：向量数据库存储目录
+- `tasks`：后台任务数据存储
 
-#### 单文件选项
-- `--max_pages <值>`: 最大处理页数，缺省则处理整个文档
+## 使用指南
 
-#### 批量处理选项
-- `--workers <值>`: 并行处理的PDF文件数(默认: 1)
-- `--max_files <值>`: 最多处理的PDF文件数，缺省则处理所有文件
-- `--min_length <值>`: 最小文本长度，低于此长度的PDF将被跳过(默认: 0)
+### 文件管理
 
-### PowerShell脚本使用方法
+- **查看文件**：首页或"文件"菜单可查看所有文件
+- **上传文件**："上传"菜单可添加新文件，并可选择标签
+- **删除文件**：在文件列表或详情页中点击删除按钮
+- **文件详情**：点击文件列表中的查看按钮，查看详细信息
+- **批量操作**：支持批量删除和批量嵌入到向量数据库
+- **高级筛选**：按标签、日期等条件筛选文档
 
-Windows用户可以使用更便捷的PowerShell脚本：
+### 标签系统
 
-```powershell
-# 基本用法
-.\convert_pdf.ps1 -InputPath "文档.pdf" -OutputDir "输出目录"
+- **查看标签**："标签"菜单可查看所有标签及其继承关系
+- **创建标签**：创建新标签，可设置父标签建立继承关系
+- **为文件添加标签**：在文件详情页或管理标签页面添加标签
+- **按标签筛选**：在文件列表页使用标签筛选功能
+- **预设标签**：系统提供基础的预设标签，可自行扩展
 
-# 使用LLM增强
-.\convert_pdf.ps1 -InputPath "文档.pdf" -OutputDir "输出目录" -UseLLM
+### RAG助手
 
-# 批量处理目录
-.\convert_pdf.ps1 -InputPath "PDF文件夹" -OutputDir "输出目录" -Workers 4 -UseLLM
-```
+- **知识库问答**：针对导入文档提问，获取准确答案
+- **多模型支持**：支持多种OpenAI模型
+- **参考引用**：显示答案来源文档链接
+- **自定义参数**：可调整检索文档数量等参数
+- **历史记录**：保存问答历史记录
 
-### 性能提示
+### 向量数据库管理
 
-1. 如果有大容量显存的GPU(8GB+)，可增加`batch_multiplier`值加速处理
-2. 使用OCR时，正确指定文档中实际包含的语言可提高准确性
-3. 多核心CPU或多GPU系统上建议增加`workers`值实现并行处理
-4. 对于主要包含图像的PDF，设置`min_length`参数可避免不必要的OCR处理
-5. 对于非常大的文档，考虑使用`max_pages`参数分批处理
-6. LLM增强功能可以显著提高转换质量，但会增加处理时间和API消耗
+- **集合管理**：创建、查看和删除向量数据库集合
+- **文档嵌入**：将文档批量嵌入到向量数据库
+- **模型选择**：为不同集合选择合适的嵌入模型
+- **数据库统计**：查看集合和文档统计信息
+
+### 全能助手
+
+- **工具使用**：通过MCP工具链支持多种外部工具
+- **调试模式**：查看助手思考过程和工具使用流程
+- **多轮对话**：支持连续多轮对话
+
+## 未来扩展计划
+
+- **高级搜索**：全文搜索和元数据搜索
+- **文件预览**：直接在网页中预览文件内容
+- **批处理优化**：更高效的批量处理机制
+- **用户管理**：添加多用户支持和权限管理
+- **API接口**：提供完整的RESTful API
+
+## 更多信息
+
+更多详细信息，请参阅[安装指南](INSTALL.md)。
 
 ## 许可证
 

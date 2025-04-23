@@ -1,0 +1,14 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include requirements.txt
+
+recursive-include amphilagus/templates *
+recursive-include amphilagus/static *
+
+recursive-exclude tests *
+recursive-exclude .venv *
+recursive-exclude .git *
+recursive-exclude .vscode *
+
+global-exclude *.py[cod] __pycache__ *.so .*.swp .DS_Store 

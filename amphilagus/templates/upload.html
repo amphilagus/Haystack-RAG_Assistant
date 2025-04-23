@@ -3,7 +3,7 @@
 {% block title %}Amphilagus - 上传文件{% endblock %}
 
 {% block header %}上传文件{% endblock %}
-{% block subheader %}添加新文件到 raw_data 目录{% endblock %}
+{% block subheader %}添加新文件到 raw_files 目录{% endblock %}
 
 {% block styles %}
 <style>
@@ -188,7 +188,7 @@
                                 <i class="fas fa-info-circle me-2"></i>检测到PDF文件，以下选项可以帮助您更好地处理PDF文件。
                             </div>
                             <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="useLLM" name="use_llm">
+                                <input class="form-check-input" type="checkbox" id="useLLM" name="use_llm" checked>
                                 <label class="form-check-label" for="useLLM">
                                     使用LLM增强PDF转换
                                     <span class="ms-1 small text-muted" data-bs-toggle="tooltip" data-bs-placement="top" title="使用大型语言模型(LLM)提高PDF到Markdown的转换质量，特别适用于复杂结构文档。">

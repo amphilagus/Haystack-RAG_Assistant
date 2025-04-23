@@ -1,5 +1,124 @@
 /* Custom CSS for Amphilagus Web App */
 
+/* Dark Theme Variables */
+:root {
+    --bg-color: #0d0f1d;
+    --fg-color: #e0e0f8;
+    --accent-color: #00e0ff;
+    --card-bg: #1a1c2e;
+    --header-bg: #111428;
+    --link-color: #00e0ff;
+}
+
+/* Global background and text */
+body {
+    background-color: var(--bg-color);
+    color: var(--fg-color);
+}
+.container {
+    background-color: transparent;
+}
+
+/* Navbar and Footer */
+.navbar, .footer {
+    background-color: var(--header-bg) !important;
+}
+.navbar .navbar-brand,
+.navbar .nav-link {
+    color: var(--fg-color) !important;
+}
+.navbar .nav-link:hover {
+    color: var(--accent-color) !important;
+}
+
+/* Cards */
+.card,
+.file-preview-item {
+    background-color: var(--card-bg);
+    color: var(--fg-color);
+    border: 1px solid #2a2c3e;
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+.btn-primary:hover {
+    background-color: #00cde0;
+    border-color: #00cde0;
+}
+.btn-outline-secondary {
+    color: var(--fg-color);
+    border-color: var(--fg-color);
+}
+.btn-outline-secondary:hover {
+    background-color: var(--accent-color);
+    color: var(--bg-color);
+}
+
+/* Links */
+a {
+    color: var(--link-color);
+}
+a:hover {
+    color: #66f0ff;
+}
+
+/* Form controls */
+.form-control,
+.form-check-input {
+    background-color: #1f2132;
+    border-color: #2a2c3e;
+    color: var(--fg-color);
+}
+.form-control:focus {
+    background-color: #1f2132;
+    color: var(--fg-color);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 0.2rem rgba(0, 255, 255, 0.5);
+}
+
+/* Alerts */
+.alert {
+    background-color: #1f2132;
+    color: var(--fg-color);
+    border-color: var(--header-bg);
+}
+
+/* Progress Bars */
+.progress-bar {
+    background-color: var(--accent-color);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #121224;
+}
+::-webkit-scrollbar-thumb {
+    background: #2a2c3e;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #3a3c4e;
+}
+
+/* Tables */
+.table {
+    color: var(--fg-color);
+}
+.table thead {
+    background-color: #1a1c2e;
+}
+.table tbody tr {
+    background-color: #1f2132;
+}
+.table tbody tr:hover {
+    background-color: #2a2c3e;
+}
+
 /* Tag item styling for hierarchy view */
 .tag-item {
     display: flex;
@@ -71,4 +190,161 @@
     border-radius: 4px;
     background-color: #f8f9fa;
     font-family: monospace;
+}
+
+/* Override white backgrounds for tag filter and common tags section */
+.input-group-text,
+.input-group .form-control {
+    background-color: var(--card-bg) !important;
+    color: var(--fg-color) !important;
+    border-color: #2a2c3e !important;
+}
+.tag-suggestions {
+    background-color: var(--card-bg) !important;
+    border-color: #2a2c3e !important;
+    color: var(--fg-color) !important;
+}
+
+/* Darken common tags card header */
+.card-header.bg-light {
+    background-color: var(--card-bg) !important;
+    color: var(--fg-color) !important;
+    border-bottom: 1px solid #2a2c3e;
+}
+
+/* Darken batch operations area */
+.batch-operations {
+    background-color: var(--card-bg) !important;
+    border: 1px solid #2a2c3e !important;
+}
+
+/* Dark theme for select inputs including RAG assistant */
+.form-select {
+    background-color: #1f2132 !important;
+    color: var(--fg-color) !important;
+    border: 1px solid #2a2c3e !important;
+}
+.form-select:focus {
+    border-color: var(--accent-color) !important;
+    box-shadow: 0 0 0 0.2rem rgba(0, 224, 255, 0.5) !important;
+}
+
+/* Override muted/help text to be brighter */
+.form-text,
+.text-muted,
+.small {
+    color: var(--fg-color) !important;
+    opacity: 0.8;
+}
+
+/* Dark theme for RAG assistant config checkboxes and radio buttons */
+.prompt-template-selector .form-check {
+    background-color: var(--card-bg) !important;
+    border: 1px solid #2a2c3e !important;
+}
+.prompt-template-selector .form-check:hover {
+    background-color: #2a2c3e !important;
+}
+.prompt-template-selector .form-check.active {
+    background-color: var(--accent-color) !important;
+    border-color: var(--accent-color) !important;
+}
+.prompt-template-selector .form-check-input {
+    background-color: var(--card-bg) !important;
+    border-color: #2a2c3e !important;
+}
+
+/* Dark theme override for Bootstrap table-light header */
+.table-light, .table-light>th, .table-light>td, .table-light th, .table-light td {
+    background-color: var(--card-bg) !important;
+    color: var(--fg-color) !important;
+    border-color: #2a2c3e !important;
+}
+
+/* Lighter hover highlight for file rows */
+.files-table tbody tr:hover {
+    background-color: #ffffff !important; /* slightly lighter than row background */
+    font-weight: 500;
+}
+
+/* 标签选择器弹出窗口深色样式 */
+.modal-content {
+    background-color: var(--card-bg) !important;
+    color: var(--fg-color) !important;
+    border: 1px solid #2a2c3e !important;
+}
+
+.modal-header, .modal-footer {
+    background-color: var(--header-bg) !important;
+    border-color: #2a2c3e !important;
+}
+
+/* Accordion 样式深色化 */
+.accordion-item {
+    background-color: var(--card-bg) !important;
+    border-color: #2a2c3e !important;
+}
+
+.accordion-button {
+    background-color: var(--header-bg) !important;
+    color: var(--fg-color) !important;
+    border-color: #2a2c3e !important;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: #2a2c3e !important;
+    color: var(--accent-color) !important;
+}
+
+.accordion-button:focus {
+    box-shadow: 0 0 0 0.25rem rgba(0, 224, 255, 0.25) !important;
+    border-color: var(--accent-color) !important;
+}
+
+.accordion-button::after {
+    filter: invert(100%) !important;
+}
+
+/* 标签树样式 */
+.tag-tree-item {
+    background-color: var(--card-bg) !important;
+}
+
+.tag-tree-item:hover {
+    background-color: #2a2c3e !important;
+}
+
+.tag-children {
+    background-color: var(--card-bg) !important;
+    border-left: 1px solid #2a2c3e !important;
+}
+
+/* 标签选择器的边框样式 */
+.border-top {
+    border-color: #2a2c3e !important;
+}
+
+/* 表单检查样式 */
+.form-check-label {
+    color: var(--fg-color) !important;
+}
+
+.small.text-muted, .form-text {
+    color: var(--fg-color) !important;
+    opacity: 0.7;
+}
+
+.text-success {
+    color: #4cd964 !important;
+}
+
+.text-warning {
+    color: #ffcc00 !important;
+}
+
+/* 提示信息 */
+.alert-info {
+    background-color: rgba(0, 224, 255, 0.1) !important;
+    color: var(--fg-color) !important;
+    border-color: rgba(0, 224, 255, 0.2) !important;
 } 

@@ -1,0 +1,27 @@
+{
+  "first_non_empty": {
+    "description": "从目录中提取非空标题，可指定从第几个非空标题开始",
+    "journals": {
+      "default": {
+        "start_index": 0,
+        "description": "默认策略：使用第一个非空标题"
+      },
+      "jctc": {
+        "start_index": 0,
+        "description": "JCTC期刊：使用第一个非空标题"
+      },
+      "pnas": {
+        "start_index": 1,
+        "description": "PNAS期刊：使用第二个非空标题"
+      },
+      "science": {
+        "start_index": 1,
+        "description": "Science期刊：使用第二个非空标题"
+      },
+      "science advances": {
+        "start_index": 1,
+        "description": "Science Advances期刊：使用第二个非空标题"
+      }
+    }
+  }
+} 

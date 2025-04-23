@@ -1,0 +1,52 @@
+{
+  "jctc": {
+    "remove_everything_after_main_content": {
+      "start": "ASSOCIATED CONTENT",
+      "end": null
+    },
+    "remove_author_information": {
+      "start": "AUTHOR INFORMATION",
+      "end": null
+    }
+  },
+  "science":{
+    "remove_everything_after_reference": {
+      "start": "# REFERENCES AND NOTES",
+      "end": null
+    }
+  },
+  "science advances":{
+    "remove_everything_after_reference": {
+      "start": "*REFERENCES AND NOTES",
+      "end": null
+    }
+  },
+  "nature communications":{
+    "remove_everything_after_reference": {
+      "start": "# References",
+      "end": null
+    },
+    "remove_everything_after_1": {
+      "start": "- 1.",
+      "end": null
+    }
+  },
+  "Materials Science & Engineering R": {
+    "remove_everything_after_reference": {
+      "start": "*References",
+      "end": null
+    }
+  },
+  "Advanced Functional Materials": {
+    "remove_everything_after_reference": {
+      "start": "- [1]",
+      "end": null
+    }
+  },
+  "npj 2D Materials and Applications": {
+    "remove_everything_after_reference": {
+      "start": "# References",
+      "end": null
+    }
+  }
+} 

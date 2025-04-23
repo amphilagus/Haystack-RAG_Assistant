@@ -1,0 +1,289 @@
+{
+  "tags": [
+    {
+      "name": "期刊类型",
+      "is_base_tag": true,
+      "is_preset_tag": false
+    },
+    {
+      "name": "发表时间",
+      "is_base_tag": true,
+      "is_preset_tag": false
+    },
+    {
+      "name": "研究领域",
+      "is_base_tag": true,
+      "is_preset_tag": false
+    },
+    {
+      "name": "评分",
+      "is_base_tag": true,
+      "is_preset_tag": false
+    },
+    {
+      "name": "其他",
+      "is_base_tag": true,
+      "is_preset_tag": false
+    },
+    {
+      "name": "Nature",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "Science",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "JCTC",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "npj Computational Materials",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "PRL",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "PRE",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "2025年",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "发表时间"
+    },
+    {
+      "name": "2024年",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "发表时间"
+    },
+    {
+      "name": "2023年",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "发表时间"
+    },
+    {
+      "name": "2022年",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "发表时间"
+    },
+    {
+      "name": "2021年",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "发表时间"
+    },
+    {
+      "name": "2020年",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "发表时间"
+    },
+    {
+      "name": "2019年",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "发表时间"
+    },
+    {
+      "name": "2018年",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "发表时间"
+    },
+    {
+      "name": "量子化学",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "研究领域"
+    },
+    {
+      "name": "分子动力学",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "研究领域"
+    },
+    {
+      "name": "机器学习",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "研究领域"
+    },
+    {
+      "name": "五星 (必读)",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "评分"
+    },
+    {
+      "name": "四星 (重要)",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "评分"
+    },
+    {
+      "name": "三星 (有用)",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "评分"
+    },
+    {
+      "name": "二星 (一般)",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "评分"
+    },
+    {
+      "name": "一星 (参考)",
+      "is_base_tag": false,
+      "is_preset_tag": true,
+      "parent": "评分"
+    },
+    {
+      "name": "忆阻器",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "研究领域"
+    },
+    {
+      "name": "Science Advances",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "Nature Communications",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "Materials Science & Engineering R",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "Advanced Functional Materials",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "npj 2D Materials and Applications",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "期刊类型"
+    }
+  ],
+  "files": [
+    {
+      "filename": "Modeling_of_emergent_memory_and_voltage_spiking_in_ionic_transport_through_angstrom-scale_slits.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Modeling_of_emergent_memory_and_voltage_spiking_in_ionic_transport_through_angstrom-scale_slits.md",
+      "tags": [
+        "忆阻器",
+        "Science"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Long-term_memory_and_synapse-like_dynamics_in_two-dimensional_nanofluidic_channels.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Long-term_memory_and_synapse-like_dynamics_in_two-dimensional_nanofluidic_channels.md",
+      "tags": [
+        "忆阻器",
+        "Science"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "A_nonconjugated_radical_polymer_enables_bimodal_memory_and_in-sensor_computing_operation.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\A_nonconjugated_radical_polymer_enables_bimodal_memory_and_in-sensor_computing_operation.md",
+      "tags": [
+        "忆阻器",
+        "Science Advances"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Hardware_implementation_of_memristor-_based_artificial_neural_networks.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Hardware_implementation_of_memristor-_based_artificial_neural_networks.md",
+      "tags": [
+        "Nature Communications",
+        "忆阻器"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Density_functional_theory_and_molecular_dynamics_simulations_for_resistive_switching_research.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Density_functional_theory_and_molecular_dynamics_simulations_for_resistive_switching_research.md",
+      "tags": [
+        "忆阻器",
+        "Materials Science & Engineering R"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "The_Future_of_Memristors_Materials_Engineering_and_Neural_Networks.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\The_Future_of_Memristors_Materials_Engineering_and_Neural_Networks.md",
+      "tags": [
+        "Advanced Functional Materials",
+        "忆阻器"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Atomistic_description_of_conductive_bridge_formation_in_two-dimensional_material_based_memristor.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Atomistic_description_of_conductive_bridge_formation_in_two-dimensional_material_based_memristor.md",
+      "tags": [
+        "忆阻器",
+        "npj 2D Materials and Applications"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Memristor-based_adaptive_neuromorphic_perception_in_unstructured_environments.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Memristor-based_adaptive_neuromorphic_perception_in_unstructured_environments.md",
+      "tags": [
+        "Nature Communications",
+        "忆阻器"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Synaptic-like_plasticity_in_2D_nanofluidic_memristor_from_competitive_bicationic_transport.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Synaptic-like_plasticity_in_2D_nanofluidic_memristor_from_competitive_bicationic_transport.md",
+      "tags": [
+        "忆阻器",
+        "Science Advances"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    }
+  ]
+}

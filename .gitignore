@@ -37,6 +37,8 @@ raw_data_backup/
 backup_data/
 results/
 tasks/
+files/
+knowledge/
 chroma_db/
 collection_metadata.json
 .env

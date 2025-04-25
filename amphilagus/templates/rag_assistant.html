@@ -10,11 +10,9 @@
     .chat-container {
         height: 600px;
         overflow-y: auto;
-        border: 1px solid #dee2e6;
         border-radius: 5px;
         padding: 15px;
         margin-bottom: 15px;
-        background-color: #f8f9fa;
     }
     .message {
         margin-bottom: 15px;
@@ -23,13 +21,11 @@
         max-width: 300%;
     }
     .user-message {
-        background-color: #e9ecef;
         margin-left: auto;
         text-align: right;
         word-wrap: break-word;
     }
     .assistant-message {
-        background-color: #d1e7dd;
         margin-right: auto;
         word-wrap: break-word;
     }
@@ -45,14 +41,7 @@
         align-items: center;
         justify-content: center;
         margin-right: 10px;
-        color: white;
         font-size: 14px;
-    }
-    .user-avatar {
-        background-color: #6c757d;
-    }
-    .assistant-avatar {
-        background-color: #198754;
     }
     .message-content {
         flex: 1;
@@ -74,22 +63,13 @@
     }
     .message-time {
         font-size: 0.7em;
-        color: #6c757d;
         margin-top: 2px;
     }
     .prompt-template-selector .form-check {
         padding: 10px;
-        border: 1px solid #dee2e6;
         border-radius: 5px;
         margin-bottom: 10px;
         transition: all 0.2s;
-    }
-    .prompt-template-selector .form-check:hover {
-        background-color: #f8f9fa;
-    }
-    .prompt-template-selector .form-check.active {
-        background-color: #d1e7dd;
-        border-color: #198754;
     }
     .template-icon {
         font-size: 1.2em;
@@ -108,7 +88,7 @@
     <div class="col-md-3 mb-3">
         <!-- 配置面板 -->
         <div class="card">
-            <div class="card-header bg-primary text-white py-2">
+            <div class="card-header py-2">
                 <i class="fas fa-cog me-2"></i>配置
             </div>
             <div class="card-body">
@@ -192,11 +172,11 @@
     <div class="col-md-9">
         <!-- 聊天界面 -->
         <div class="card">
-            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center py-2">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
                 <div>
                     <i class="fas fa-comments me-2"></i>对话
                     {% if current_template %}
-                        <span class="badge bg-light text-dark ms-2">
+                        <span class="badge ms-2">
                             {% if current_template == 'precise' %}
                                 🔍 精准模式
                             {% elif current_template == 'creative' %}
@@ -210,13 +190,13 @@
                 
                 {% if initialized %}
                     <div class="model-info">
-                        <span class="badge bg-light text-dark">
+                        <span class="badge">
                             <i class="fas fa-robot me-1"></i>{{ current_model }}
                         </span>
                         
                         <!-- 添加清空历史按钮 -->
                         <form method="post" action="{{ url_for('rag_assistant_clear') }}" class="d-inline ms-2" id="clearHistoryForm" onsubmit="return confirm('确定要清空聊天历史吗？');">
-                            <button type="submit" class="btn btn-sm btn-outline-light">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">
                                 <i class="fas fa-trash-alt"></i> 清空历史
                             </button>
                         </form>
@@ -282,18 +262,18 @@
                             <input type="text" class="form-control" id="userQuery" name="user_query" 
                                    placeholder="输入您的问题..." required autocomplete="off">
                             <div class="input-group-prepend" style="margin-left: 8px; margin-right: 8px;">
-                                <span class="input-group-text bg-light py-1 px-2" style="border-radius: 4px;">
+                                <span class="input-group-text py-1 px-2" style="border-radius: 4px;">
                                     <label for="includeReferencesCheck" class="mb-0 me-2 small text-muted">
                                         <input type="checkbox" id="includeReferencesCheck" name="include_references" class="me-1" 
                                                title="显示参考文献列表">
                                         返回参考文献
                                     </label>
                                     <label for="topKInput" class="mb-0 me-1 small text-muted">检索数量:</label>
-                                    <input type="number" class="form-control-sm border-0 bg-light" id="topKInput" name="top_k" 
+                                    <input type="number" class="form-control-sm border-0" id="topKInput" name="top_k" 
                                        min="1" max="100" value="{{ top_k }}" style="width: 50px;" title="检索文档数量">
                                 </span>
                             </div>
-                            <button class="btn btn-success" type="submit">
+                            <button class="btn btn-primary" type="submit">
                                 <i class="fas fa-paper-plane"></i>
                             </button>
                         </div>
@@ -301,7 +281,7 @@
                 {% else %}
                     <div class="p-5 text-center">
                         <i class="fas fa-robot fa-4x mb-3 text-muted"></i>
-                        <h5>请先初始化RAG助手</h5>
+                        <h5>请先初始化RAG助手</h5>111
                         <p class="text-muted">在左侧完成配置并点击"初始化或更新"按钮开始使用</p>
                     </div>
                 {% endif %}
@@ -346,6 +326,32 @@
             });
         }
         
+        // 记住检索数量设置
+        const topKInput = document.getElementById('topKInput');
+        if (topKInput) {
+            // 从localStorage加载检索数量
+            const savedTopK = localStorage.getItem('topKValue');
+            if (savedTopK !== null) {
+                topKInput.value = savedTopK;
+            }
+            
+            // 当值变化时保存到localStorage
+            topKInput.addEventListener('change', function() {
+                localStorage.setItem('topKValue', this.value);
+            });
+            
+            // 确保值在有效范围内
+            topKInput.addEventListener('blur', function() {
+                const value = parseInt(this.value);
+                if (isNaN(value) || value < 1) {
+                    this.value = 1;
+                } else if (value > 100) {
+                    this.value = 100;
+                }
+                localStorage.setItem('topKValue', this.value);
+            });
+        }
+        
         // 聊天表单处理
         const chatForm = document.getElementById('chatForm');
         if (chatForm) {
@@ -358,6 +364,11 @@
                 // 保存参考文献复选框状态，以便页面刷新后恢复
                 if (includeReferencesCheck) {
                     localStorage.setItem('includeReferencesState', includeReferencesCheck.checked);
+                }
+                
+                // 保存检索数量值
+                if (topKInput) {
+                    localStorage.setItem('topKValue', topKInput.value);
                 }
                 
                 // 可以在这里添加提交时的加载动画

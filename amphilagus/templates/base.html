@@ -24,32 +24,32 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">
+                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('index') }}">
                             <i class="fas fa-home me-1"></i>首页
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('list_files') }}">
+                        <a class="nav-link {% if request.path == '/files' or request.path.startswith('/files/') %}active{% endif %}" href="{{ url_for('list_files') }}">
                             <i class="fas fa-file me-1"></i>文件
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('upload_file') }}">
-                            <i class="fas fa-upload me-1"></i>上传
+                        <a class="nav-link {% if request.path == '/literature' or request.path.startswith('/literature/') %}active{% endif %}" href="{{ url_for('list_literature') }}">
+                            <i class="fas fa-book me-1"></i>文献
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('list_tags') }}">
+                        <a class="nav-link {% if request.path == '/tags' %}active{% endif %}" href="{{ url_for('list_tags') }}">
                             <i class="fas fa-tags me-1"></i>标签
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('database_dashboard') }}">
+                        <a class="nav-link {% if request.path == '/database' %}active{% endif %}" href="{{ url_for('database_dashboard') }}">
                             <i class="fas fa-database me-1"></i>数据库
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('view_tasks') }}">
+                        <a class="nav-link {% if request.path == '/tasks' %}active{% endif %}" href="{{ url_for('view_tasks') }}">
                             <i class="fas fa-tasks me-1"></i>任务管理
                         </a>
                     </li>
@@ -59,12 +59,12 @@
                         </a>
                         <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
                             <li>
-                                <a class="dropdown-item" href="{{ url_for('rag_assistant') }}">
+                                <a class="dropdown-item {% if request.path == '/rag_assistant' %}active{% endif %}" href="{{ url_for('rag_assistant') }}">
                                     <i class="fas fa-book me-1"></i>RAG 助手
                                 </a>
                             </li>
                             <li>
-                                <a class="dropdown-item" href="{{ url_for('universal_assistant') }}">
+                                <a class="dropdown-item {% if request.path == '/universal_assistant' %}active{% endif %}" href="{{ url_for('universal_assistant') }}">
                                     <i class="fas fa-magic me-1"></i>全能助手
                                 </a>
                             </li>

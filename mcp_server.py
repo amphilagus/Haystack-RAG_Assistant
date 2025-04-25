@@ -3,8 +3,14 @@ import os
 import sys
 import locale
 from typing import Dict, List, Optional, Any
+from pathlib import Path
 
-from rag_assistant.logger import get_logger
+# 处理并设置工作空间目录
+workspace_dir = os.getcwd()
+workspace_dir = Path(workspace_dir).resolve()
+os.environ['AMPHILAGUS_WORKSPACE'] = str(workspace_dir)
+
+from amphilagus.logger import get_logger
 logger = get_logger("mcp_server")
 
 # Set environment variables for proper encoding
@@ -47,7 +53,7 @@ except (locale.Error, AttributeError):
         pass  # If locale setting fails, continue anyway
 
 # Log encoding information
-logger.info("RAG Assistant server starting...")
+logger.info("Amphilagus server starting...")
 logger.info(f"Python version: {sys.version}")
 logger.info(f"System encoding: {sys.getdefaultencoding()}")
 logger.info(f"Locale encoding: {locale.getpreferredencoding()}")
@@ -57,7 +63,7 @@ if 'logger_prefx' in locals():
 logger.info(f"PYTHONIOENCODING: {os.environ.get('PYTHONIOENCODING', 'not set')}")
 
 # Initialize FastMCP server
-mcp = FastMCP("rag_assistant")
+mcp = FastMCP("mcp_server")
 
 class RAGPipelineWrapper:
     def __init__(self):
@@ -73,7 +79,7 @@ class RAGPipelineWrapper:
     def _load_collections_metadata(self):
         """从JSON文件加载集合元数据"""
         # 导入collection_metadata模块
-        from rag_assistant.collection_metadata import list_collections
+        from amphilagus.rag.collection_metadata import list_collections
         # 使用list_collections获取所有集合元数据
         self.collections_metadata = list_collections()
 
@@ -92,7 +98,7 @@ class RAGPipelineWrapper:
             logger.info(f"正在为集合 '{collection_name}' 初始化RAG管道...")
             
             # 在这里导入RAG管道，以避免循环导入
-            from rag_assistant.rag_pipeline import RAGPipeline
+            from amphilagus.rag.rag_pipeline import RAGPipeline
 
             # 从元数据中获取嵌入模型（如果可用）
             if collection_name in self.collections_metadata:
@@ -273,7 +279,7 @@ class RAGPipelineWrapper:
 
         try:
             # 先尝试从title_matcher中获取缓存的标题
-            from rag_assistant.title_matcher import title_matcher
+            from amphilagus.rag.title_matcher import title_matcher
             if title_matcher.has_cached_titles(collection_name):
                 logger.debug(f"从title_matcher获取集合 '{collection_name}' 的缓存标题")
                 return title_matcher.get_cached_titles(collection_name)
@@ -290,7 +296,8 @@ class RAGPipelineWrapper:
             
         except Exception as e:
             logger.error(f"Error verifying collection or getting titles for '{collection_name}': {e}")
-            return [] # 其他获取文档或处理过程中的错误
+            # 直接报错
+            raise e
 
     def batch_query(self, queries: List[Dict], collection_name: str):
         """
@@ -481,14 +488,26 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description='启动MCP服务器')
-    parser.add_argument('--debug', action='store_true', help='启用调试模式（DEBUG级别的日志)')
+    parser.add_argument('--debug', action='store_true', help='启用调试模式')
+    parser.add_argument('--log-level', 
+                      type=str, 
+                      choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                      default='INFO',
+                      help='设置日志级别 (DEBUG, INFO, WARNING, ERROR, CRITICAL)')
     args = parser.parse_args()
     
-    # 如果指定了--debug参数，将日志级别设置为DEBUG
+    # 设置LOG_LEVEL环境变量
     if args.debug:
+        os.environ['LOG_LEVEL'] = 'DEBUG'
         import logging
         logger.setLevel(logging.DEBUG)
-        logger.debug("已启用DEBUG级别的日志记录")
+    else:
+        os.environ['LOG_LEVEL'] = args.log_level
+        import logging
+        log_level = getattr(logging, args.log_level)
+        logger.setLevel(log_level)
+    
+    logger.info(f"日志级别: {os.environ['LOG_LEVEL']}")
     
     # Pre-initialize collections for faster first requests
     logger.info("Starting pre-initialization of collections...")

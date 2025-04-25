@@ -14,7 +14,7 @@ from typing import List, Dict, Any, Optional, Set, Tuple, Union
 import pandas as pd
 
 # 替换原来的logging导入和logger初始化
-from rag.logger import get_logger
+from ..logger import get_logger
 logger = get_logger("title_matcher")
 
 class TitleMatcher:

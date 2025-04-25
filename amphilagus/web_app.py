@@ -16,6 +16,9 @@ import uuid
 import re
 import openai
 
+from .assistant import MCPToolAgent
+from .literature import Literature
+
 from .logger import get_logger
 from .file_manager import FileManager
 from . import config
@@ -937,167 +940,6 @@ def reload_database():
         return jsonify({"success": False, "message": f"重新加载失败: {str(e)}"}), 500
 
 
-@app.route('/database/collections/<collection_name>')
-def view_collection(collection_name):
-    """查看集合详情"""
-    try:
-        if not HAS_RAG:
-            return redirect(url_for('database_dashboard', error='RAG模块未导入，无法查看集合'))
-        
-        # 使用db_manager获取集合详情
-        collection_details = db_manager.get_collection_details(collection_name)
-        if not collection_details:
-            return redirect(url_for('database_dashboard', error=f'集合"{collection_name}"不存在'))
-        
-        # 检查ChromaDB客户端是否已初始化
-        if not db_manager.client:
-            return redirect(url_for('database_dashboard', error='ChromaDB客户端未初始化，请检查数据库路径'))
-        
-        try:
-            # 直接从ChromaDB获取数据
-            chroma_collection = db_manager.client.get_collection(collection_name)
-            # 获取总文档数
-            doc_count = chroma_collection.count()
-            
-            # 获取所有文档
-            raw_files = None
-            documents = []
-            
-            # 直接获取所有文档
-            raw_files = chroma_collection.get()
-            
-            # 处理文档数据
-            for i, doc_id in enumerate(raw_files.get("ids", [])):
-                metadata = raw_files.get("metadatas", [])[i] if raw_files.get("metadatas") and i < len(raw_files.get("metadatas", [])) else {}
-                content = raw_files.get("documents", [])[i] if raw_files.get("documents") and i < len(raw_files.get("documents", [])) else ""
-                
-                documents.append({
-                    "id": doc_id,
-                    "metadata": metadata,
-                    "content_preview": content[:50] + "..." if content and len(content) > 50 else content
-                })
-            
-            app.logger.info(f"直接从ChromaDB获取到 {len(documents)} 个文档")
-            
-        except Exception as e:
-            app.logger.error(f"直接从ChromaDB获取文档失败: {str(e)}")
-            # 如果直接获取失败，尝试使用db_manager方法获取
-            docs_result = db_manager.get_document_details(collection_name)
-            
-            if not docs_result["success"]:
-                app.logger.error(f"通过db_manager获取文档列表失败: {docs_result['message']}")
-                documents = []
-            else:
-                documents = docs_result.get("documents", [])
-            
-            app.logger.info(f"通过db_manager获取到 {len(documents)} 个文档")
-        
-        # 计算标签集
-        all_tags = set()
-        
-        # 将文档按标题分组
-        documents_by_title = {}
-        unique_titles = set()
-        
-        for doc in documents:
-            metadata = doc.get("metadata", {})
-            if "tags" in metadata:
-                all_tags.update(metadata.get("tags", []))
-            
-            # 提取标题
-            title = metadata.get("title", "无标题文档")
-            unique_titles.add(title)
-            
-            # 准备展示数据
-            doc_for_display = {
-                'id': doc.get("id", ""),
-                'title': title,
-                'text': doc.get("content_preview", ""),
-                'tags': metadata.get("tags", []),
-                'created_at': metadata.get("creation_time", datetime.datetime.now())
-            }
-            
-            # 添加到分组字典
-            if title not in documents_by_title:
-                documents_by_title[title] = []
-            documents_by_title[title].append(doc_for_display)
-        
-        # 随机排序每个标题下的文档
-        import random
-        for title in documents_by_title:
-            random.shuffle(documents_by_title[title])
-        
-        # 构建集合信息
-        collection_info = {
-            'name': collection_name,
-            'description': collection_details.get("metadata", {}).get("description", ""),
-            'embedding_model': collection_details.get("embedding_model", "Unknown"),
-            'document_count': doc_count if 'doc_count' in locals() else collection_details.get("doc_count", 0) or len(documents),
-            'unique_tags': sorted(list(all_tags)),
-            'unique_titles': len(unique_titles),
-            'creation_time': collection_details.get("created_at", datetime.datetime.now())
-        }
-        
-        # 处理文档列表 - 为了兼容性保留这个变量
-        docs_for_display = []
-        for doc in documents:
-            metadata = doc.get("metadata", {})
-            docs_for_display.append({
-                'id': doc.get("id", ""),
-                'title': metadata.get("title", "") or doc.get("id", "")[:8],
-                'text': doc.get("content_preview", ""),
-                'tags': metadata.get("tags", []),
-                'created_at': metadata.get("creation_time", datetime.datetime.now())
-            })
-        
-        return render_template('collection_view.html', 
-                            collection=collection_info,
-                            documents=docs_for_display,
-                            documents_by_title=documents_by_title,
-                            success=request.args.get('success'),
-                            error=request.args.get('error'))
-    except Exception as e:
-        import traceback
-        app.logger.error(f"加载集合时出错: {str(e)}\n{traceback.format_exc()}")
-        return redirect(url_for('database_dashboard', error=f'加载集合时出错: {str(e)}'))
-
-
-@app.route('/database/collections/<collection_name>/edit', methods=['POST'])
-def edit_collection(collection_name):
-    """编辑集合信息"""
-    try:
-        if not HAS_RAG:
-            return redirect(url_for('database_dashboard', error='RAG模块未导入，无法编辑集合'))
-            
-        description = request.form.get('description', '')
-        
-        # 使用db_manager获取集合
-        collection_details = db_manager.get_collection_details(collection_name)
-        if not collection_details:
-            return redirect(url_for('view_collection', 
-                                  collection_name=collection_name, 
-                                  error='集合不存在或无法访问'))
-        
-        # 初始化pipeline以便访问document_store
-        success, message, pipeline = db_manager.init_pipeline(collection_name)
-        if not success:
-            return redirect(url_for('view_collection', 
-                                  collection_name=collection_name, 
-                                  error=f'无法初始化Pipeline: {message}'))
-        
-        # 更新描述 - 通过collection_utils或直接修改元数据
-        from .rag.collection_metadata import update_collection_metadata
-        update_collection_metadata(collection_name, {"description": description})
-        
-        return redirect(url_for('view_collection', 
-                              collection_name=collection_name, 
-                              success='集合信息已更新'))
-    except Exception as e:
-        return redirect(url_for('view_collection', 
-                              collection_name=collection_name, 
-                              error=f'更新集合信息时出错: {str(e)}'))
-
-
 @app.route('/database/collections/<collection_name>/delete', methods=['POST'])
 def delete_collection(collection_name):
     """删除集合"""
@@ -1117,94 +959,6 @@ def delete_collection(collection_name):
         import traceback
         traceback.print_exc()
         return redirect(url_for('database_dashboard', error=f'删除集合时出错: {str(e)}'))
-
-
-@app.route('/collections/<collection_name>/documents/<document_id>', methods=['GET'])
-def view_document_details(collection_name, document_id):
-    """View a document's details."""
-    try:
-        # Get document details directly from the global db_manager
-        try:
-            result = db_manager.get_document_details(collection_name, document_id)
-            
-            # Debug logging
-            app.logger.debug(f"Retrieved document details: {result}")
-            
-            if not result["success"] or not result["documents"]:
-                flash('文档不存在。Document does not exist.', 'error')
-                return redirect(url_for('view_collection', collection_name=collection_name))
-            
-            # Get the first document from the result
-            document = result["documents"][0]
-            
-            # Ensure document has required fields
-            if not hasattr(document, 'metadata') or document.metadata is None:
-                document.metadata = {}
-                
-            # Ensure content exists
-            if not hasattr(document, 'content') or document.content is None:
-                document.content = '<em>该文档没有内容或内容无法显示。</em>'
-                
-            return render_template('document_view.html', document=document, collection_name=collection_name)
-            
-        except Exception as e:
-            app.logger.error(f"Error retrieving document details: {str(e)}")
-            flash(f'获取文档详情时出错: {str(e)}', 'error')
-            return redirect(url_for('view_collection', collection_name=collection_name))
-            
-    except Exception as e:
-        app.logger.error(f"Error in view_document_details: {str(e)}")
-        flash(f'查看文档详情时发生错误: {str(e)}', 'error')
-        return redirect(url_for('database_dashboard'))
-
-
-@app.route('/database/debug/collection/<collection_name>')
-def debug_collection(collection_name):
-    """调试集合内容 - 仅在开发环境使用"""
-    if not app.debug:
-        return jsonify({"error": "只在调试模式下可用"}), 403
-    
-    try:
-        # 获取集合详情
-        collection_details = db_manager.get_collection_details(collection_name)
-        
-        # 直接访问ChromaDB集合获取原始数据
-        if db_manager.client:
-            try:
-                chroma_collection = db_manager.client.get_collection(collection_name)
-                raw_files = chroma_collection.get()
-                
-                # 获取文档详情结果
-                docs_result = db_manager.get_document_details(collection_name)
-                
-                results = {
-                    "collection_details": collection_details,
-                    "chroma_raw_files": {
-                        "ids": raw_files.get("ids", [])[:10],  # 仅显示前10个ID
-                        "metadatas_count": len(raw_files.get("metadatas", [])),
-                        "documents_count": len(raw_files.get("documents", [])),
-                        "sample_metadata": raw_files.get("metadatas", [])[:2] if raw_files.get("metadatas") else []
-                    },
-                    "document_details_result": {
-                        "success": docs_result.get("success"),
-                        "message": docs_result.get("message"),
-                        "total": docs_result.get("total", 0),
-                        "document_count": len(docs_result.get("documents", [])),
-                        "sample_documents": docs_result.get("documents", [])[:2]
-                    }
-                }
-                
-                return jsonify(results)
-            except Exception as e:
-                return jsonify({"error": f"访问ChromaDB失败: {str(e)}"})
-        else:
-            return jsonify({"error": "ChromaDB客户端未初始化"})
-    except Exception as e:
-        import traceback
-        return jsonify({
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        })
 
 
 # 添加日期格式化过滤器
@@ -1799,6 +1553,92 @@ def database_dashboard():
                                         "total_documents": 0},
                               error=f"读取集合列表时出错: {str(e)}")
 
+@app.route('/literature')
+def list_literature():
+    """List all literature."""
+    # 加载所有文献
+    literature_list = Literature.list_all()
+    # 通过BASE_TAGS传递基础标签类型给前端，用于过滤
+    return render_template('literature.html', literature=literature_list, filter_tags=None, exact=False, base_tag_names=list(BASE_TAGS.keys()))
+
+
+@app.route('/literature/filter', methods=['GET'])
+def filter_literature():
+    """根据标签筛选文献"""
+    tags = request.args.getlist('tags')
+    exact = request.args.get('exact', 'false').lower() == 'true'
+    
+    # 保持向后兼容性 - 如果使用旧格式的tag参数
+    tag_name = request.args.get('tag')
+    if tag_name and not tags:
+        tags = [tag_name]
+    
+    # 加载所有文献
+    all_literature = Literature.list_all()
+    
+    if not tags:
+        # 没有标签，显示所有文献
+        filtered_literature = all_literature
+    else:
+        # 按标签过滤文献
+        filtered_literature = []
+        for lit in all_literature:
+            # 针对每篇文献，检查它是否具有所有指定的标签
+            if exact:
+                # 精确匹配：文献必须具有所有指定的标签
+                if all(tag in lit.tags for tag in tags):
+                    filtered_literature.append(lit)
+            else:
+                # 非精确匹配：文献至少具有一个指定的标签
+                if any(tag in lit.tags for tag in tags):
+                    filtered_literature.append(lit)
+    
+    # 通过BASE_TAGS传递基础标签类型给前端，用于过滤
+    return render_template('literature.html', literature=filtered_literature, filter_tags=tags, exact=exact, base_tag_names=list(BASE_TAGS.keys()))
+
+
+@app.route('/literature/sync', methods=['POST'])
+def sync_literature_tags():
+    """同步文献与文件系统中的标签"""
+    try:
+        # 获取所有文献
+        literature_list = Literature.list_all()
+        
+        # 遍历每篇文献，加载标签并更新
+        for lit in literature_list:
+            # 从文件管理器中加载标签
+            lit.load_tags_from_json(file_manager)
+            # 根据标签更新文献属性
+            lit.update_from_tags(file_manager)
+            # 保存更新后的文献
+            lit.save()
+        
+        flash('文献标签同步完成', 'success')
+    except Exception as e:
+        flash(f'同步文献标签时出错: {str(e)}', 'error')
+    
+    return redirect(url_for('list_literature'))
+
+
+@app.route('/literature/update_files', methods=['POST'])
+def update_literature_files():
+    """将文献属性更新到文件标签"""
+    try:
+        # 获取所有文献
+        literature_list = Literature.list_all()
+        
+        # 遍历每篇文献，更新文件标签
+        success_count = 0
+        for lit in literature_list:
+            # 更新文件标签，自动创建不存在的标签
+            if lit.update_file_tags(file_manager, auto_create_tags=True):
+                success_count += 1
+        
+        flash(f'已更新 {success_count} 篇文献的文件标签', 'success')
+    except Exception as e:
+        flash(f'更新文件标签时出错: {str(e)}', 'error')
+    
+    return redirect(url_for('list_literature'))
 
 if __name__ == '__main__':
     run_app(debug=True) 

@@ -314,7 +314,7 @@ class RAGPipeline:
         Returns:
             集合中的唯一标题集合
         """
-        from rag.title_matcher import title_matcher
+        from .title_matcher import title_matcher
         
         # 如果未指定集合名称，使用当前集合名称
         if collection_name is None:
@@ -359,7 +359,7 @@ class RAGPipeline:
         """
         try:
             # 导入标题匹配器
-            from rag.title_matcher import title_matcher
+            from .title_matcher import title_matcher
             import time
             
             # 预先缓存所有标题，提高后续查找效率

@@ -439,41 +439,70 @@
     // 存储选中的文件集合
     let selectedFiles = new Set();
     
-    // 获取所有标签
-    function fetchAllTags() {
-        fetch('{{ url_for("api_list_tags") }}')
-            .then(response => response.json())
-            .then(data => {
-                allTags = data.map(tag => tag.name);
-                populateCommonTags();
-            })
-            .catch(error => console.error('获取标签失败:', error));
-    }
-    
     // 填充常用标签区域
     function populateCommonTags() {
         const container = document.getElementById('commonTagsContainer');
         container.innerHTML = '';
         
-        // 过滤掉基础标签
-        const filteredTags = allTags.filter(tag => !baseTagNames.includes(tag));
+        // 按照父标签分组
+        const tagsByParent = {};
         
-        // 显示前20个标签(或者你可以计算频率排序)
-        const tagsToShow = filteredTags.slice(0, 20);
-        
-        if (tagsToShow.length === 0) {
-            container.innerHTML = '<em>暂无可用标签</em>';
-            return;
-        }
-        
-        tagsToShow.forEach(tag => {
-            const tagBadge = document.createElement('span');
-            tagBadge.className = 'badge bg-secondary clickable-tag';
-            tagBadge.textContent = tag;
-            tagBadge.style.cursor = 'pointer';
-            tagBadge.onclick = () => addFilterTag(tag);
-            container.appendChild(tagBadge);
+        // 为每个基础标签创建一个空数组
+        baseTagNames.forEach(name => {
+            tagsByParent[name] = [];
         });
+        
+        // 从API获取标签列表及其父子关系
+        fetch('{{ url_for("api_list_tags") }}')
+            .then(response => response.json())
+            .then(data => {
+                // 提取所有标签名称用于自动完成
+                allTags = data.map(tag => tag.name);
+                
+                // 分组标签
+                data.forEach(tag => {
+                    // 只处理有父标签的标签
+                    if (tag.parent && baseTagNames.includes(tag.parent)) {
+                        if (!tagsByParent[tag.parent]) {
+                            tagsByParent[tag.parent] = [];
+                        }
+                        tagsByParent[tag.parent].push(tag);
+        }
+                });
+                
+                // 构建每个组的HTML
+                baseTagNames.forEach(baseTag => {
+                    if (tagsByParent[baseTag] && tagsByParent[baseTag].length > 0) {
+                        // 创建标签组的HTML
+                        const groupHtml = `
+                            <div class="tag-group me-4 mb-2">
+                                <div class="tag-group-title mb-1"><strong>${baseTag}</strong></div>
+                                <div class="tag-group-items d-flex flex-wrap gap-1">
+                                    ${tagsByParent[baseTag].map(tag => 
+                                        `<span class="badge bg-secondary clickable-tag" 
+                                                onclick="addFilterTag('${tag.name}')">${tag.name}</span>`
+                                    ).join('')}
+                                </div>
+                            </div>
+                        `;
+                        container.insertAdjacentHTML('beforeend', groupHtml);
+                    }
+                });
+                
+                // 如果没有标签，显示提示
+                if (container.innerHTML === '') {
+                    container.innerHTML = '<em>暂无可用标签</em>';
+                }
+            })
+            .catch(error => {
+                console.error('获取标签失败:', error);
+                container.innerHTML = '<em>加载标签失败</em>';
+            });
+    }
+    
+    // 获取所有标签
+    function fetchAllTags() {
+        populateCommonTags(); // 直接调用更新后的函数，它已经包含获取标签的功能
     }
     
     // 添加选中的标签

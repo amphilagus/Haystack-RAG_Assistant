@@ -1,0 +1,456 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - 文献列表{% endblock %}
+
+{% block header %}文献列表{% endblock %}
+{% block subheader %}
+    {% if filter_tags %}
+        正在查看标签 
+        {% for tag in filter_tags %}
+            <span class="badge bg-info">{{ tag }}</span>{% if not loop.last %} + {% endif %}
+        {% endfor %}
+        的文献
+        {% if exact %}（精确匹配）{% else %}（包含至少一个标签）{% endif %}
+        <a href="{{ url_for('list_literature') }}" class="btn btn-sm btn-outline-secondary ms-2">查看全部文献</a>
+    {% else %}
+        管理学术文献库
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <form action="{{ url_for('filter_literature') }}" method="get" class="form-inline" id="tagFilterForm">
+            <div class="input-group mb-2">
+                <div class="input-group-prepend">
+                    <span class="input-group-text">按标签筛选</span>
+                </div>
+                <div class="tag-input-container position-relative flex-grow-1">
+                    <input type="text" id="tagInput" class="form-control" placeholder="输入标签名" autocomplete="off">
+                    <div id="tagSuggestions" class="tag-suggestions d-none position-absolute w-100 mt-1 bg-white border rounded shadow-sm"></div>
+                </div>
+                <button type="button" id="addTagBtn" class="btn btn-secondary">添加</button>
+                <button type="submit" class="btn btn-primary">筛选</button>
+            </div>
+            <div class="d-flex align-items-center mb-2">
+                <div class="form-check form-switch me-4">
+                    <input class="form-check-input" type="checkbox" name="exact" id="exactMatch" value="true" {% if exact %}checked{% endif %}>
+                    <label class="form-check-label" for="exactMatch">精确匹配</label>
+                </div>
+                <div id="selectedTagsContainer" class="d-flex flex-wrap gap-2">
+                    {% if filter_tags %}
+                        {% for tag in filter_tags %}
+                            <div class="selected-tag badge bg-info d-flex align-items-center">
+                                {{ tag }}
+                                <input type="hidden" name="tags" value="{{ tag }}">
+                                <button type="button" class="btn-close btn-close-white ms-1" aria-label="Remove" onclick="removeTag(this)"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+    <div class="col-md-4 text-end">
+        <!-- 同步按钮已移除 -->
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-light">
+                <strong>常用标签</strong>
+            </div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap gap-2" id="commonTagsContainer">
+                    <!-- 这里会通过JS加载常用标签 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if literature %}
+    <style>
+        /* 调整表格各列的宽度比例 */
+        .literature-card {
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+        .literature-card .card-header {
+            cursor: pointer;
+            padding: 0.75rem 1rem;
+        }
+        .literature-card .card-body {
+            display: none;
+            padding: 1rem;
+        }
+        .literature-card.expanded .card-body {
+            display: block;
+        }
+        .literature-title {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-right: 0.5rem;
+        }
+        .literature-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        .detail-row {
+            margin-bottom: 0.5rem;
+        }
+        .detail-label {
+            font-weight: bold;
+            min-width: 100px;
+            display: inline-block;
+        }
+        .detail-value {
+            display: inline-block;
+        }
+        .literature-meta {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        
+        /* 标签自动完成样式 */
+        .tag-suggestions {
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        .tag-suggestion-item {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+        }
+        .tag-suggestion-item:hover, .tag-suggestion-item.active {
+            background-color: #f8f9fa;
+        }
+        .tag-suggestion-item .match {
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        .selected-tag {
+            padding: 0.25rem 0.5rem;
+            margin-right: 0.25rem;
+            margin-bottom: 0.25rem;
+            display: inline-flex;
+            align-items: center;
+        }
+        .btn-close {
+            font-size: 0.5rem;
+            padding: 0.25rem;
+        }
+        .selected-tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+    </style>
+    
+    <div class="literature-list">
+        {% for lit in literature %}
+            <div class="card literature-card" data-literature-id="{{ lit.title }}">
+                <div class="card-header d-flex justify-content-between align-items-center" onclick="toggleLiterature(this)">
+                    <div>
+                        <span class="literature-title">{{ lit.title }}</span>
+                        <span class="literature-meta">
+                            {{ lit.journal }} ({{ lit.publish_year }})
+                        </span>
+                        <div class="literature-tags">
+                            {% for tag in lit.tags %}
+                                <span class="badge bg-info me-1 clickable-tag" onclick="addFilterTag('{{ tag }}'); event.stopPropagation();">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="detail-row">
+                                <span class="detail-label">标题:</span>
+                                <span class="detail-value">{{ lit.title }}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">期刊:</span>
+                                <span class="detail-value">{{ lit.journal }}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">发表年份:</span>
+                                <span class="detail-value">{{ lit.publish_year }}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">作者:</span>
+                                <span class="detail-value">{{ lit.authors|join(', ') }}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">研究领域:</span>
+                                <span class="detail-value">{{ lit.research_field|join(', ') }}</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="detail-row">
+                                <span class="detail-label">评价:</span>
+                                <span class="detail-value">{{ lit.review }}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">研究背景:</span>
+                                <div class="detail-value">{{ lit.background }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">研究方法:</span>
+                                <div class="detail-value">{{ lit.methodology }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">研究亮点:</span>
+                                <div class="detail-value">{{ lit.highlights }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if lit.content %}
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="detail-row">
+                                <span class="detail-label">内容:</span>
+                                <div class="detail-value">{{ lit.content }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="alert alert-secondary">
+        <i class="fas fa-info-circle me-2"></i>
+        {% if filter_tags %}
+            未找到带有标签 
+            {% for tag in filter_tags %}
+                <strong>{{ tag }}</strong>{% if not loop.last %} 和 {% endif %}
+            {% endfor %}
+            的文献。
+        {% else %}
+            暂无文献数据。
+        {% endif %}
+    </div>
+{% endif %}
+
+<script>
+    // 文献卡片展开/折叠
+    function toggleLiterature(element) {
+        const card = element.closest('.literature-card');
+        card.classList.toggle('expanded');
+        const icon = card.querySelector('.toggle-icon');
+        if (card.classList.contains('expanded')) {
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-up');
+        } else {
+            icon.classList.remove('fa-chevron-up');
+            icon.classList.add('fa-chevron-down');
+        }
+    }
+    
+    // 添加筛选标签
+    function addFilterTag(tagName) {
+        // 检查标签是否已经被选择
+        const existingTags = Array.from(document.querySelectorAll('#selectedTagsContainer input[name="tags"]'))
+            .map(input => input.value);
+        
+        if (!existingTags.includes(tagName)) {
+            const tagHtml = `
+                <div class="selected-tag badge bg-info d-flex align-items-center">
+                    ${tagName}
+                    <input type="hidden" name="tags" value="${tagName}">
+                    <button type="button" class="btn-close btn-close-white ms-1" aria-label="Remove" onclick="removeTag(this)"></button>
+                </div>
+            `;
+            document.getElementById('selectedTagsContainer').insertAdjacentHTML('beforeend', tagHtml);
+        }
+        
+        // 滚动到页面顶部的筛选表单
+        document.getElementById('tagFilterForm').scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // 移除筛选标签
+    function removeTag(button) {
+        button.closest('.selected-tag').remove();
+    }
+    
+    // 所有可用标签列表
+    let allTags = [];
+    // 基础标签列表 - 后端提供，需要从常用标签中排除
+    const baseTagNames = JSON.parse('{% if base_tag_names %}{{ base_tag_names|tojson }}{% else %}[]{% endif %}');
+    
+    // 页面加载时获取常用标签
+    document.addEventListener('DOMContentLoaded', function() {
+        // 获取标签列表
+        fetch('/api/tags')
+            .then(response => response.json())
+            .then(data => {
+                allTags = data.map(tag => tag.name);
+                
+                // 按照父标签分组
+                const tagsByParent = {};
+                
+                // 为每个基础标签创建一个空数组
+                baseTagNames.forEach(name => {
+                    tagsByParent[name] = [];
+                });
+                
+                // 分组标签
+                data.forEach(tag => {
+                    // 只处理有父标签的标签
+                    if (tag.parent && baseTagNames.includes(tag.parent)) {
+                        if (!tagsByParent[tag.parent]) {
+                            tagsByParent[tag.parent] = [];
+                        }
+                        tagsByParent[tag.parent].push(tag);
+                    }
+                });
+                
+                // 构建每个组的HTML
+                const commonTagsContainer = document.getElementById('commonTagsContainer');
+                
+                baseTagNames.forEach(baseTag => {
+                    if (tagsByParent[baseTag] && tagsByParent[baseTag].length > 0) {
+                        // 创建标签组的HTML
+                        const groupHtml = `
+                            <div class="tag-group me-4 mb-2">
+                                <div class="tag-group-title mb-1"><strong>${baseTag}</strong></div>
+                                <div class="tag-group-items d-flex flex-wrap gap-1">
+                                    ${tagsByParent[baseTag].map(tag => 
+                                        `<span class="badge bg-secondary clickable-tag" 
+                                               onclick="addFilterTag('${tag.name}')">${tag.name}</span>`
+                                    ).join('')}
+                                </div>
+                            </div>
+                        `;
+                        commonTagsContainer.insertAdjacentHTML('beforeend', groupHtml);
+                    }
+                });
+            })
+            .catch(error => console.error('Error loading tags:', error));
+            
+        // 标签输入自动完成
+        const tagInput = document.getElementById('tagInput');
+        const tagSuggestions = document.getElementById('tagSuggestions');
+        const addTagBtn = document.getElementById('addTagBtn');
+        
+        // 显示标签建议
+        tagInput.addEventListener('input', function() {
+            const inputVal = this.value.toLowerCase();
+            if (inputVal.length < 1) {
+                tagSuggestions.classList.add('d-none');
+                return;
+            }
+            
+            const matchingTags = allTags.filter(tag => 
+                tag.toLowerCase().includes(inputVal)
+            );
+            
+            if (matchingTags.length > 0) {
+                tagSuggestions.innerHTML = '';
+                matchingTags.slice(0, 10).forEach(tag => {
+                    const highlightedTag = tag.replace(
+                        new RegExp(inputVal, 'gi'),
+                        match => `<span class="match">${match}</span>`
+                    );
+                    
+                    const item = document.createElement('div');
+                    item.className = 'tag-suggestion-item';
+                    item.innerHTML = highlightedTag;
+                    item.addEventListener('click', function() {
+                        addFilterTag(tag);
+                        tagInput.value = '';
+                        tagSuggestions.classList.add('d-none');
+                    });
+                    
+                    tagSuggestions.appendChild(item);
+                });
+                tagSuggestions.classList.remove('d-none');
+            } else {
+                tagSuggestions.classList.add('d-none');
+            }
+        });
+        
+        // 添加标签按钮
+        addTagBtn.addEventListener('click', function() {
+            const inputVal = tagInput.value.trim();
+            if (inputVal) {
+                addFilterTag(inputVal);
+                tagInput.value = '';
+                tagSuggestions.classList.add('d-none');
+            }
+        });
+        
+        // 点击输入框外部时隐藏建议
+        document.addEventListener('click', function(e) {
+            if (!tagInput.contains(e.target) && !tagSuggestions.contains(e.target)) {
+                tagSuggestions.classList.add('d-none');
+            }
+        });
+        
+        // 支持回车添加标签
+        tagInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                
+                // 如果有选中的建议项，使用它
+                const activeItem = tagSuggestions.querySelector('.tag-suggestion-item.active');
+                if (activeItem && !tagSuggestions.classList.contains('d-none')) {
+                    activeItem.click();
+                } else {
+                    // 否则使用输入的值
+                    const inputVal = tagInput.value.trim();
+                    if (inputVal) {
+                        addFilterTag(inputVal);
+                        tagInput.value = '';
+                        tagSuggestions.classList.add('d-none');
+                    }
+                }
+            }
+        });
+        
+        // 支持上下键导航建议项
+        tagInput.addEventListener('keydown', function(e) {
+            if (tagSuggestions.classList.contains('d-none')) return;
+            
+            const items = tagSuggestions.querySelectorAll('.tag-suggestion-item');
+            const activeItem = tagSuggestions.querySelector('.tag-suggestion-item.active');
+            
+            if (items.length === 0) return;
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (!activeItem) {
+                    // 没有选中项，选中第一项
+                    items[0].classList.add('active');
+                } else {
+                    // 选中下一项
+                    const currentIndex = Array.from(items).indexOf(activeItem);
+                    activeItem.classList.remove('active');
+                    const nextIndex = (currentIndex + 1) % items.length;
+                    items[nextIndex].classList.add('active');
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!activeItem) {
+                    // 没有选中项，选中最后一项
+                    items[items.length - 1].classList.add('active');
+                } else {
+                    // 选中上一项
+                    const currentIndex = Array.from(items).indexOf(activeItem);
+                    activeItem.classList.remove('active');
+                    const prevIndex = (currentIndex - 1 + items.length) % items.length;
+                    items[prevIndex].classList.add('active');
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

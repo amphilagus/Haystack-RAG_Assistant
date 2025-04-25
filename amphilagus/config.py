@@ -28,6 +28,9 @@ RAW_FILES_METADATA_PATH = os.path.join(FILES_DIR, 'raw_files_metadata.json')
 BACKUP_FILES_PATH = os.path.join(FILES_DIR, 'backup_files')
 TASKS_PATH = os.path.join(WORKSPACE_DIR, 'tasks')
 CHROMA_DB_PATH = os.path.join(WORKSPACE_DIR, 'chroma_db')
+KNOWLEDGE_DIR = os.path.join(WORKSPACE_DIR, 'knowledge')
+LITERATURE_DATA_PATH = os.path.join(KNOWLEDGE_DIR, 'literature_data.json')
+COLLECTION_METADATA_FILE = os.path.join(WORKSPACE_DIR, 'collection_metadata.json')
 
 # 配置文件路径
 MD_CLEANER_CONFIG_PATH = os.path.join(CONFIGS_DIR, 'md_cleaner_config.json')
@@ -43,6 +46,9 @@ logger.debug(f"RAW_FILES_METADATA_PATH: {RAW_FILES_METADATA_PATH}")
 logger.debug(f"BACKUP_FILES_PATH: {BACKUP_FILES_PATH}")
 logger.debug(f"TASKS_PATH: {TASKS_PATH}")
 logger.debug(f"CHROMA_DB_PATH: {CHROMA_DB_PATH}")
+logger.debug(f"KNOWLEDGE_DIR: {KNOWLEDGE_DIR}")
+logger.debug(f"LITERATURE_DATA_PATH: {LITERATURE_DATA_PATH}")
+logger.debug(f"COLLECTION_METADATA_FILE: {COLLECTION_METADATA_FILE}")
 logger.debug(f"MD_CLEANER_CONFIG_PATH: {MD_CLEANER_CONFIG_PATH}")
 logger.debug(f"TITLE_EXTRACTOR_CONFIG_PATH: {TITLE_EXTRACTOR_CONFIG_PATH}")
 
@@ -51,6 +57,7 @@ os.makedirs(RAW_FILES_PATH, exist_ok=True)
 os.makedirs(BACKUP_FILES_PATH, exist_ok=True)
 os.makedirs(TASKS_PATH, exist_ok=True)
 os.makedirs(CONFIGS_DIR, exist_ok=True)
+os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
 
 # 加载配置文件
 try:

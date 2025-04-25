@@ -16,19 +16,19 @@ if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
 try:
-    from collection_metadata import get_embedding_model, get_collection_metadata
+    from .collection_metadata import get_embedding_model, get_collection_metadata
 except ImportError:
     # 尝试添加父目录到路径
     parent_dir = os.path.dirname(current_dir)
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
     try:
-        from rag.collection_metadata import get_embedding_model, get_collection_metadata
+        from .collection_metadata import get_embedding_model, get_collection_metadata
     except ImportError:
         # 最后尝试直接导入
         try:
             sys.path.insert(0, os.path.join(parent_dir, "rag_assistant"))
-            from collection_metadata import get_embedding_model, get_collection_metadata
+            from .collection_metadata import get_embedding_model, get_collection_metadata
         except ImportError:
             print("ERROR: Cannot import collection_metadata module.")
             sys.exit(1)

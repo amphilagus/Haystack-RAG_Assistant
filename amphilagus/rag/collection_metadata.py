@@ -9,8 +9,10 @@ import os
 import json
 from typing import Dict, Any, Optional
 
-# 元数据文件路径
-METADATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "collection_metadata.json")
+from .. import config
+
+# 使用config.py中的全局配置
+METADATA_FILE = config.COLLECTION_METADATA_FILE
 
 def save_collection_metadata(collection_name: str, embedding_model: str) -> None:
     """

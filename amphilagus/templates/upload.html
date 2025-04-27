@@ -82,7 +82,7 @@
 
           <!-- ─── Action buttons ─── -->
           <div class="mt-4 d-flex justify-content-end gap-2">
-            <a href="{{ url_for('list_files') }}" class="btn btn-outline-secondary">取消</a>
+            <a href="{{ url_for('files.list_files') }}" class="btn btn-outline-secondary">取消</a>
             <button id="upload-btn" type="button" class="btn btn-primary" disabled>
               <i class="fas fa-upload me-1"></i> 上传
             </button>
@@ -118,7 +118,7 @@
           <div id="hierarchicalTagSelector">{% set selected_tags = [] %}{% include 'components/hierarchical_tag_selector.html' with context %}</div>
           <div class="border-top pt-3 mt-3"><h6>已选标签：</h6><div id="selectedTagsPreview" class="mt-2"></div></div>
         {% else %}
-          <div class="alert alert-info">暂无标签，您可以在上传时创建新标签或 <a href="{{ url_for('create_tag') }}" class="alert-link">现在创建</a>。</div>
+          <div class="alert alert-info">暂无标签，您可以在上传时创建新标签或 <a href="{{ url_for('tags.create_tag') }}" class="alert-link">现在创建</a>。</div>
         {% endif %}
       </div>
       <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button id="applyTags" class="btn btn-primary">应用选择</button></div>
@@ -130,9 +130,9 @@
 {% block scripts %}
 <!-- 将后端路由注入 JS 常量，供 upload_file.js 使用 -->
 <script>
-  const UPLOAD_ENDPOINT = "{{ url_for('upload_file') }}";
-  const TASKS_URL       = "{{ url_for('view_tasks') }}";
-  const LIST_URL        = "{{ url_for('list_files') }}";
+  const UPLOAD_ENDPOINT = "{{ url_for('files.upload_file') }}";
+  const TASKS_URL       = "{{ url_for('tasks.view_tasks') }}";
+  const LIST_URL        = "{{ url_for('files.list_files') }}";
 </script>
 <!-- 主逻辑脚本（拖拽 / 预览 / 上传） -->
 <script src="{{ url_for('static', filename='js/upload_file.js') }}"></script>

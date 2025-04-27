@@ -15,7 +15,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark mb-4">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
+            <a class="navbar-brand" href="{{ url_for('base.index') }}">
                 Amphilagus
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -24,59 +24,42 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('index') }}">
+                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('base.index') }}">
                             <i class="fas fa-home me-1"></i>首页
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/files' or request.path.startswith('/files/') %}active{% endif %}" href="{{ url_for('list_files') }}">
+                        <a class="nav-link {% if request.path == '/files' or request.path.startswith('/files/') %}active{% endif %}" href="{{ url_for('files.list_files') }}">
                             <i class="fas fa-file me-1"></i>文件
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/literature' or request.path.startswith('/literature/') %}active{% endif %}" href="{{ url_for('list_literature') }}">
+                        <a class="nav-link {% if request.path == '/literature' or request.path.startswith('/literature/') %}active{% endif %}" href="{{ url_for('literature.list_literature') }}">
                             <i class="fas fa-book me-1"></i>文献
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/tags' %}active{% endif %}" href="{{ url_for('list_tags') }}">
+                        <a class="nav-link {% if request.path == '/tags' %}active{% endif %}" href="{{ url_for('tags.list_tags') }}">
                             <i class="fas fa-tags me-1"></i>标签
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/database' %}active{% endif %}" href="{{ url_for('database_dashboard') }}">
+                        <a class="nav-link {% if request.path == '/database' %}active{% endif %}" href="{{ url_for('database.database_dashboard') }}">
                             <i class="fas fa-database me-1"></i>数据库
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/tasks' %}active{% endif %}" href="{{ url_for('view_tasks') }}">
+                        <a class="nav-link {% if request.path == '/tasks' %}active{% endif %}" href="{{ url_for('tasks.view_tasks') }}">
                             <i class="fas fa-tasks me-1"></i>任务管理
                         </a>
                     </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/agent_assistant' %}active{% endif %}" href="{{ url_for('agent.agent_assistant') }}">
                             <i class="fas fa-robot me-1"></i>智能助手
                         </a>
-                        <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
-                            <li>
-                                <a class="dropdown-item {% if request.path == '/rag_assistant' %}active{% endif %}" href="{{ url_for('rag_assistant') }}">
-                                    <i class="fas fa-book me-1"></i>RAG 助手
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item {% if request.path == '/universal_assistant' %}active{% endif %}" href="{{ url_for('universal_assistant') }}">
-                                    <i class="fas fa-magic me-1"></i>全能助手
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item {% if request.path == '/agent_assistant' %}active{% endif %}" href="{{ url_for('agent_assistant') }}">
-                                    <i class="fas fa-robot me-1"></i>集合智能助手
-                                </a>
-                            </li>
-                        </ul>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('reload_config') }}" title="重新加载配置文件">
+                        <a class="nav-link" href="{{ url_for('base.reload_config') }}" title="重新加载配置文件">
                             <i class="fas fa-sync-alt me-1"></i>刷新配置
                         </a>
                     </li>

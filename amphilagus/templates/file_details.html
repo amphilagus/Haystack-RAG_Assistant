@@ -10,7 +10,7 @@
     <div class="col-md-12">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('list_files') }}">文件列表</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('files.list_files') }}">文件列表</a></li>
                 <li class="breadcrumb-item active">{{ file.filename }}</li>
             </ol>
         </nav>
@@ -29,18 +29,18 @@
                     {% if file.tags %}
                         <div>
                             {% for tag in file.tags %}
-                                <a href="{{ url_for('filter_files', tag=tag) }}" class="badge bg-info p-2 me-2 mb-2 text-decoration-none">
+                                <a href="{{ url_for('files.filter_files', tag=tag) }}" class="badge bg-info p-2 me-2 mb-2 text-decoration-none">
                                     {{ tag }}
                                 </a>
                             {% endfor %}
-                            <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-sm btn-outline-primary ms-2">
+                            <a href="{{ url_for('files.manage_file_tags', filename=file.filename) }}" class="btn btn-sm btn-outline-primary ms-2">
                                 <i class="fas fa-edit me-1"></i>管理标签
                             </a>
                         </div>
                     {% else %}
                         <p class="text-muted">
                             无标签
-                            <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-sm btn-outline-primary ms-2">
+                            <a href="{{ url_for('files.manage_file_tags', filename=file.filename) }}" class="btn btn-sm btn-outline-primary ms-2">
                                 <i class="fas fa-plus me-1"></i>添加标签
                             </a>
                         </p>
@@ -58,7 +58,7 @@
                         </button>
                     </div>
                     <div id="description-editor" class="mt-2" style="display: none;">
-                        <form action="{{ url_for('update_description', filename=file.filename) }}" method="post">
+                        <form action="{{ url_for('files.update_description', filename=file.filename) }}" method="post">
                             <div class="mb-3">
                                 <textarea class="form-control" id="description" name="description" rows="3">{{ file.description }}</textarea>
                             </div>
@@ -100,7 +100,7 @@
                             onclick="confirmDelete('{{ file.filename }}')">
                         <i class="fas fa-trash me-1"></i>删除文件
                     </button>
-                    <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info">
+                    <a href="{{ url_for('files.manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info">
                         <i class="fas fa-tags me-1"></i>管理标签
                     </a>
                 </div>
@@ -131,7 +131,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <form method="post" action="{{ url_for('delete_file', filename=file.filename) }}">
+                <form method="post" action="{{ url_for('files.delete_file', filename=file.filename) }}">
                     <button type="submit" class="btn btn-danger">删除</button>
                 </form>
             </div>

@@ -43,7 +43,11 @@ if __name__ == "__main__":
         os.environ['LOG_LEVEL'] = args.log_level
     print(f"日志级别: {os.environ['LOG_LEVEL']}")
 
-    from amphilagus.web_app import app
+    # 从amphilagus.web导入create_app函数并创建应用实例
+    from amphilagus.web import create_app
+    
+    # 创建Flask应用实例
+    app = create_app()
 
     # Add current year for footer copyright
     @app.context_processor

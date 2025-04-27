@@ -11,7 +11,7 @@
         {% endfor %}
         的文件
         {% if exact %}（精确匹配）{% else %}（包含子类）{% endif %}
-        <a href="{{ url_for('list_files') }}" class="btn btn-sm btn-outline-secondary ms-2">查看全部文件</a>
+        <a href="{{ url_for('files.list_files') }}" class="btn btn-sm btn-outline-secondary ms-2">查看全部文件</a>
     {% else %}
         管理 raw_files 文件
     {% endif %}
@@ -20,7 +20,7 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col-md-8">
-        <form action="{{ url_for('filter_files') }}" method="get" class="form-inline" id="tagFilterForm">
+        <form action="{{ url_for('files.filter_files') }}" method="get" class="form-inline" id="tagFilterForm">
             <div class="input-group mb-2">
                 <div class="input-group-prepend">
                     <span class="input-group-text">按标签筛选</span>
@@ -52,7 +52,7 @@
         </form>
     </div>
     <div class="col-md-4 text-end">
-        <a href="{{ url_for('upload_file') }}" class="btn btn-success">
+        <a href="{{ url_for('files.upload_file') }}" class="btn btn-success">
             <i class="fas fa-upload me-1"></i>上传文件
         </a>
     </div>
@@ -207,10 +207,10 @@
                         <td class="desc-col" title="{{ file.description }}">{{ file.description[:50] }}{% if file.description|length > 50 %}...{% endif %}</td>
                         <td class="actions-col">
                             <div class="btn-group btn-group-sm">
-                                <a href="{{ url_for('file_details', filename=file.filename) }}" class="btn btn-outline-primary" title="查看详情" target="_blank">
+                                <a href="{{ url_for('files.file_details', filename=file.filename) }}" class="btn btn-outline-primary" title="查看详情" target="_blank">
                                     <i class="fas fa-eye"></i>
                                 </a>
-                                <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info" title="管理标签">
+                                <a href="{{ url_for('files.manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info" title="管理标签">
                                     <i class="fas fa-tags"></i>
                                 </a>
                                 <button type="button" class="btn btn-outline-secondary" title="重命名文件" 
@@ -240,7 +240,7 @@
         {% else %}
             暂无文件。
         {% endif %}
-        <a href="{{ url_for('upload_file') }}" class="alert-link">上传文件</a>
+        <a href="{{ url_for('files.upload_file') }}" class="alert-link">上传文件</a>
     </div>
 {% endif %}
 
@@ -279,7 +279,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <form id="batchDeleteForm" method="post" action="{{ url_for('batch_delete_files') }}">
+                <form id="batchDeleteForm" method="post" action="{{ url_for('files.batch_delete_files') }}">
                     <div id="batchDeleteFilesContainer"></div>
                     <button type="submit" class="btn btn-danger">删除所选文件</button>
                 </form>
@@ -297,7 +297,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form id="batchEmbedForm" method="post" action="{{ url_for('batch_embed_files') }}">
+                <form id="batchEmbedForm" method="post" action="{{ url_for('files.batch_embed_files') }}">
                     <div class="mb-3">
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="createCollectionCheckbox" name="create_collection">
@@ -453,7 +453,7 @@
         });
         
         // 从API获取标签列表及其父子关系
-        fetch('{{ url_for("api_list_tags") }}')
+        fetch('{{ url_for('api.api_list_tags') }}')
             .then(response => response.json())
             .then(data => {
                 // 提取所有标签名称用于自动完成
@@ -981,7 +981,7 @@
         }
         
         // 从API获取集合列表
-        fetch('{{ url_for("api_list_collections") }}')
+        fetch('{{ url_for('api.api_list_collections') }}')
             .then(response => response.json())
             .then(collections => {
                 // 添加选项到下拉列表

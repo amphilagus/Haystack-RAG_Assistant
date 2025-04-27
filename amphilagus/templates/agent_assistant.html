@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 
-{% block title %}Amphilagus - 集合智能助手{% endblock %}
+{% block title %}Amphilagus - 智能助手{% endblock %}
 
-{% block header %}集合智能助手{% endblock %}
-{% block subheader %}与多个文档集合进行智能对话与引用{% endblock %}
+{% block header %}智能助手{% endblock %}
+{% block subheader %}这里有多种智能助手供你使用和调试{% endblock %}
 
 {% block head_extra %}
 <style>
@@ -64,13 +64,14 @@
         margin-left: auto;
         text-align: left;
         word-wrap: break-word;
-        max-width: 80%;
+        max-width: 70%;
+        width: fit-content;
     }
     
     .assistant-message {
         margin-right: auto;
         word-wrap: break-word;
-        max-width: 80%;
+        max-width: 70%;
     }
     
     .message-avatar {
@@ -104,6 +105,10 @@
         width: 100%;
     }
     
+    .user-message-container.text-end {
+        justify-content: flex-end;
+    }
+    
     .user-avatar {
         width: 30px;
         height: 30px;
@@ -129,6 +134,12 @@
     
     .user-wrapper {
         align-items: flex-end;
+    }
+    
+    .user-wrapper .message-time {
+        text-align: right;
+        width: 100%;
+        padding-right: 40px; /* 为头像预留的空间 */
     }
     
     .message-time {
@@ -366,21 +377,6 @@
                 </form>
             </div>
         </div>
-        
-        <!-- 助手信息面板 -->
-        <div class="card mt-3">
-            <div class="card-header py-2">
-                <i class="fas fa-info-circle me-2"></i>当前助手
-            </div>
-            <div class="card-body p-0">
-                <div class="current-agent-info p-3 text-center" id="currentAgentInfo">
-                    <div class="placeholder-message text-muted">
-                        <i class="fas fa-robot fa-2x mb-2"></i>
-                        <p>请创建或选择一个智能助手</p>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <div class="col-md-9">
@@ -389,6 +385,11 @@
             <div class="card-header d-flex justify-content-between align-items-center py-2">
                 <div>
                     <i class="fas fa-comments me-2"></i>智能助手对话
+                </div>
+                <div id="currentAgentInfo" class="d-flex align-items-center">
+                    <div class="placeholder-message text-muted small">
+                        <span>请创建或选择一个智能助手</span>
+                    </div>
                 </div>
                 <div>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="clearChatBtn">
@@ -667,17 +668,13 @@
                 '<span class="badge bg-primary">问答助手</span>';
             
             currentAgentInfo.innerHTML = `
-                <h5>${agent.name} ${typeLabel}</h5>
-                <div class="mb-2">
+                <div class="d-flex gap-2 align-items-center">
+                    <span>${agent.name} ${typeLabel}</span>
                     <span class="badge bg-primary">集合: ${agent.collection}</span>
-                </div>
-                <div class="mb-2">
                     <span class="badge bg-secondary">模型: ${agent.model}</span>
-                </div>
-                <div class="mb-2">
                     <span class="badge bg-info">结果数量: ${agent.topK}</span>
+                    ${agent.debugMode ? '<span class="badge bg-warning">调试模式</span>' : ''}
                 </div>
-                ${agent.debugMode ? '<div><span class="badge bg-warning">调试模式: 已启用</span></div>' : ''}
             `;
         }
         
@@ -707,9 +704,8 @@
                     sendMessageBtn.disabled = true;
                     noAgentPlaceholder.classList.remove('hidden');
                     currentAgentInfo.innerHTML = `
-                        <div class="placeholder-message text-muted">
-                            <i class="fas fa-robot fa-2x mb-2"></i>
-                            <p>请创建或选择一个智能助手</p>
+                        <div class="placeholder-message text-muted small">
+                            <span>请创建或选择一个智能助手</span>
                         </div>
                     `;
                 }
@@ -727,10 +723,14 @@
             // 添加用户消息到UI
             const userMessageElem = document.createElement('div');
             userMessageElem.className = 'message-wrapper user-wrapper';
+            
+            // 判断是单行还是多行消息
+            const isSingleLine = !text.includes('\n') && text.length < 80; // 大约80个字符作为单行的判断标准
+            
             userMessageElem.innerHTML = `
-                <div class="user-message-container">
+                <div class="user-message-container ${isSingleLine ? 'text-end' : ''}">
                     <div class="user-avatar">👤</div>
-                    <div class="message-content user-message">
+                    <div class="message-content user-message ${isSingleLine ? 'text-end' : ''}">
                         ${text}
                     </div>
                 </div>
@@ -816,8 +816,8 @@
             
             // 根据助手类型选择API端点
             const apiEndpoint = assistantType === 'reference' ? 
-                '/agent_ref_assistant/process' : 
-                '/agent_assistant/chat';
+                '/agent_assistant/collection_ref' : 
+                '/agent_assistant/collection_qa';
             
             // 发送到后端
             fetch(apiEndpoint, {

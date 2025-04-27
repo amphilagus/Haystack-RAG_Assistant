@@ -11,7 +11,7 @@
         {% endfor %}
         的文献
         {% if exact %}（精确匹配）{% else %}（包含至少一个标签）{% endif %}
-        <a href="{{ url_for('list_literature') }}" class="btn btn-sm btn-outline-secondary ms-2">查看全部文献</a>
+        <a href="{{ url_for('literature.list_literature') }}" class="btn btn-sm btn-outline-secondary ms-2">查看全部文献</a>
     {% else %}
         管理学术文献库
     {% endif %}
@@ -20,7 +20,7 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col-md-8">
-        <form action="{{ url_for('filter_literature') }}" method="get" class="form-inline" id="tagFilterForm">
+        <form action="{{ url_for('literature.filter_literature') }}" method="get" class="form-inline" id="tagFilterForm">
             <div class="input-group mb-2">
                 <div class="input-group-prepend">
                     <span class="input-group-text">按标签筛选</span>

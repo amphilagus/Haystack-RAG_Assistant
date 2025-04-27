@@ -16,8 +16,8 @@
                 <p class="card-text">管理 raw_files 文件，支持标签分类和搜索。</p>
                 <div class="d-flex justify-content-between align-items-center">
                     <div class="btn-group">
-                        <a href="{{ url_for('list_files') }}" class="btn btn-sm btn-outline-primary">查看文件</a>
-                        <a href="{{ url_for('upload_file') }}" class="btn btn-sm btn-primary">上传文件</a>
+                        <a href="{{ url_for('files.list_files') }}" class="btn btn-sm btn-outline-primary">查看文件</a>
+                        <a href="{{ url_for('files.upload_file') }}" class="btn btn-sm btn-primary">上传文件</a>
                     </div>
                     <small class="text-muted">{{ files|length }} 个文件</small>
                 </div>
@@ -34,48 +34,10 @@
                 <p class="card-text">创建和管理标签，支持标签继承关系。</p>
                 <div class="d-flex justify-content-between align-items-center">
                     <div class="btn-group">
-                        <a href="{{ url_for('list_tags') }}" class="btn btn-sm btn-outline-success">查看标签</a>
-                        <a href="{{ url_for('create_tag') }}" class="btn btn-sm btn-success">创建标签</a>
+                        <a href="{{ url_for('tags.list_tags') }}" class="btn btn-sm btn-outline-success">查看标签</a>
+                        <a href="{{ url_for('tags.create_tag') }}" class="btn btn-sm btn-success">创建标签</a>
                     </div>
                     <small class="text-muted">{{ tags|length }} 个标签</small>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row mt-2">
-    <div class="col-md-6">
-        <div class="card mb-4 shadow-sm">
-            <div class="card-body">
-                <h2 class="card-title">
-                    <i class="fas fa-book me-2 text-info"></i>RAG 助手
-                </h2>
-                <p class="card-text">基于本地知识库的对话助手，可以智能查询文档内容。</p>
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="btn-group">
-                        <a href="{{ url_for('rag_assistant') }}" class="btn btn-sm btn-info text-white">使用 RAG 助手</a>
-                    </div>
-                    <small class="text-muted">基于向量检索增强生成</small>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-6">
-        <div class="card mb-4 shadow-sm highlight-card">
-            <div class="card-body">
-                <h2 class="card-title">
-                    <i class="fas fa-magic me-2 text-warning"></i>全能助手
-                </h2>
-                <p class="card-text">基于多工具集成的智能助手，支持多种复杂查询和任务处理。</p>
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="btn-group">
-                        <a href="{{ url_for('universal_assistant') }}" class="btn btn-sm btn-warning text-white">使用全能助手</a>
-                    </div>
-                    <small class="text-muted">
-                        <span class="badge bg-success">新功能</span>
-                    </small>
                 </div>
             </div>
         </div>
@@ -144,10 +106,10 @@
                                         <td class="desc-col" title="{{ file.description }}">{{ file.description[:50] }}{% if file.description|length > 50 %}...{% endif %}</td>
                                         <td class="actions-col">
                                             <div class="btn-group btn-group-sm">
-                                                <a href="{{ url_for('file_details', filename=file.filename) }}" class="btn btn-outline-primary" title="查看详情">
+                                                <a href="{{ url_for('files.file_details', filename=file.filename) }}" class="btn btn-outline-primary" title="查看详情">
                                                     <i class="fas fa-eye"></i>
                                                 </a>
-                                                <a href="{{ url_for('manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info" title="管理标签">
+                                                <a href="{{ url_for('files.manage_file_tags', filename=file.filename) }}" class="btn btn-outline-info" title="管理标签">
                                                     <i class="fas fa-tags"></i>
                                                 </a>
                                                 <button type="button" class="btn btn-outline-danger" title="删除文件" 
@@ -163,13 +125,13 @@
                     </div>
                     {% if files|length > 5 %}
                         <div class="text-center mt-3">
-                            <a href="{{ url_for('list_files') }}" class="btn btn-outline-primary">查看全部</a>
+                            <a href="{{ url_for('files.list_files') }}" class="btn btn-outline-primary">查看全部</a>
                         </div>
                     {% endif %}
                 {% else %}
                     <div class="alert alert-secondary">
                         <i class="fas fa-info-circle me-2"></i>暂无文件。
-                        <a href="{{ url_for('upload_file') }}" class="alert-link">上传文件</a>
+                        <a href="{{ url_for('files.upload_file') }}" class="alert-link">上传文件</a>
                     </div>
                 {% endif %}
             </div>

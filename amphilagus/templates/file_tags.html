@@ -10,8 +10,8 @@
     <div class="col-md-12">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('list_files') }}">文件列表</a></li>
-                <li class="breadcrumb-item"><a href="{{ url_for('file_details', filename=file.filename) }}">{{ file.filename }}</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('files.list_files') }}">文件列表</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('files.file_details', filename=file.filename) }}">{{ file.filename }}</a></li>
                 <li class="breadcrumb-item active">管理标签</li>
             </ol>
         </nav>
@@ -82,7 +82,7 @@
                 <p><strong>文件名：</strong> {{ file.filename }}</p>
                 <p><strong>描述：</strong> {{ file.description or '无' }}</p>
                 <div class="d-grid gap-2">
-                    <a href="{{ url_for('file_details', filename=file.filename) }}" class="btn btn-outline-primary">
+                    <a href="{{ url_for('files.file_details', filename=file.filename) }}" class="btn btn-outline-primary">
                         <i class="fas fa-file me-1"></i>文件详情
                     </a>
                 </div>
@@ -122,7 +122,7 @@
                     </div>
                 {% else %}
                     <div class="alert alert-info">
-                        暂无标签。您可以创建新标签，或者 <a href="{{ url_for('create_tag') }}" class="alert-link">在这里创建标签</a>。
+                        暂无标签。您可以创建新标签，或者 <a href="{{ url_for('tags.create_tag') }}" class="alert-link">在这里创建标签</a>。
                     </div>
                 {% endif %}
             </div>

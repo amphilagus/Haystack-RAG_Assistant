@@ -79,7 +79,7 @@ class RAGPipelineWrapper:
     def _load_collections_metadata(self):
         """从JSON文件加载集合元数据"""
         # 导入collection_metadata模块
-        from amphilagus.rag.collection_metadata import list_collections
+        from amphilagus.database.collection_metadata import list_collections
         # 使用list_collections获取所有集合元数据
         self.collections_metadata = list_collections()
 
@@ -98,7 +98,7 @@ class RAGPipelineWrapper:
             logger.info(f"正在为集合 '{collection_name}' 初始化RAG管道...")
             
             # 在这里导入RAG管道，以避免循环导入
-            from amphilagus.rag.rag_pipeline import RAGPipeline
+            from amphilagus.pipeline.basic import RAGPipeline
 
             # 从元数据中获取嵌入模型（如果可用）
             if collection_name in self.collections_metadata:
@@ -279,7 +279,7 @@ class RAGPipelineWrapper:
 
         try:
             # 先尝试从title_matcher中获取缓存的标题
-            from amphilagus.rag.title_matcher import title_matcher
+            from amphilagus.database.title_matcher import title_matcher
             if title_matcher.has_cached_titles(collection_name):
                 logger.debug(f"从title_matcher获取集合 '{collection_name}' 的缓存标题")
                 return title_matcher.get_cached_titles(collection_name)

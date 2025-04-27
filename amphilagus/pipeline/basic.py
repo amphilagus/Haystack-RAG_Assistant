@@ -16,36 +16,17 @@ import sys
 from typing import List, Dict, Any, Optional, Set
 from dotenv import load_dotenv
 from haystack import Pipeline, Document
-from haystack_integrations.document_stores.chroma import ChromaDocumentStore
 from haystack.components.embedders import SentenceTransformersDocumentEmbedder, SentenceTransformersTextEmbedder
-from haystack.components.retrievers.in_memory import InMemoryEmbeddingRetriever
 from haystack_integrations.components.retrievers.chroma import ChromaEmbeddingRetriever
 from haystack.utils import Secret
 from tqdm import tqdm
 from haystack.components.builders import ChatPromptBuilder
 from haystack.components.generators.chat import OpenAIChatGenerator
-from haystack.dataclasses import ChatMessage
-import copy
-import json
-import pickle
-from collections import defaultdict
-import numpy as np
-import pandas as pd
-from haystack.components.retrievers import InMemoryEmbeddingRetriever
-from haystack.document_stores.in_memory import InMemoryDocumentStore
-from haystack.utils import Secret
 from .. import config
 
-# 导入自定义的CustomChromaDocumentStore
-# 先确保当前目录在sys.path中
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
-
-
-# 先尝试相对路径导入
-from .custom_document_store import CustomChromaDocumentStore
-from .collection_metadata import save_collection_metadata, get_embedding_model, delete_collection_metadata
+# 相对路径导入
+from ..database.custom_document_store import CustomChromaDocumentStore
+from ..database.collection_metadata import save_collection_metadata, get_embedding_model, delete_collection_metadata
 from .prompt_templates import get_template, get_all_templates
 from ..logger import get_logger
 
@@ -68,7 +49,7 @@ class RAGPipeline:
                 llm_model: str = "gpt-4o-mini",
                 top_k: int = 5,
                 api_key: Optional[str] = None,
-                persist_dir: str = "../chroma_db",
+                persist_dir: str = config.CHROMA_DB_PATH,
                 collection_name: str = "documents",
                 reset_collection: bool = False,
                 hard_reset: bool = False,
@@ -115,6 +96,8 @@ class RAGPipeline:
         
         # Initialize with default settings
         self.create_new_pipeline(use_llm=use_llm)
+        
+        self.busy = True
 
     def _initialize_with_settings(self, settings: Dict[str, Any], custom_retriever=None) -> None:
         """
@@ -278,7 +261,7 @@ class RAGPipeline:
         """
         self.current_pipeline = self.default_pipeline
 
-    def run(self, query: str) -> Dict[str, Any]:
+    def run(self, query: str, *args) -> Dict[str, Any]:
         """
         Run the current pipeline with a user query.
         
@@ -296,13 +279,7 @@ class RAGPipeline:
             include_outputs_from={"retriever", "llm"})
             return results
         except Exception as e:
-            try:
-                results = self.current_pipeline.run({
-                    "text_embedder": {"text": query},
-                })
-                return results
-            except Exception as e:
-                raise ValueError(f"查询处理失败: {e}")
+            raise ValueError(f"查询处理失败: {e}")
 
     def _cache_all_titles(self, collection_name: str = None) -> Set[str]:
         """
@@ -314,7 +291,7 @@ class RAGPipeline:
         Returns:
             集合中的唯一标题集合
         """
-        from .title_matcher import title_matcher
+        from ..database.title_matcher import title_matcher
         
         # 如果未指定集合名称，使用当前集合名称
         if collection_name is None:
@@ -359,7 +336,7 @@ class RAGPipeline:
         """
         try:
             # 导入标题匹配器
-            from .title_matcher import title_matcher
+            from ..database.title_matcher import title_matcher
             import time
             
             # 预先缓存所有标题，提高后续查找效率
@@ -485,7 +462,7 @@ class RAGPipeline:
         # Check for duplicates if requested
         if check_duplicates:
             print("Checking for duplicate documents...")
-            from .document_loader import is_duplicate_document
+            from ..database.document_loader import is_duplicate_document
             filtered_docs = []
             duplicates_count = 0
             
@@ -593,7 +570,7 @@ class RAGPipeline:
             
             # 如果不需要参考文献，直接返回答案
             if not include_references:
-                return answer
+                return {"answer": answer}
                 
             # 处理参考文献
             references = []
@@ -804,78 +781,80 @@ class RAGPipeline:
         results = []
         original_top_k = self.default_settings["top_k"]  # 保存原始top_k
         
-        try:
-            for query_config in queries:
-                # 验证查询配置
-                if not isinstance(query_config, dict):
-                    logger.warning(f"跳过非字典查询配置: {query_config}")
-                    continue
-                    
-                if "query" not in query_config:
-                    logger.warning(f"跳过缺少查询文本的配置: {query_config}")
-                    continue
-                    
-                if "mode" not in query_config:
-                    logger.warning(f"跳过缺少运行模式的配置: {query_config}")
-                    continue
+
+        for query_config in queries:
+            # 验证查询配置
+            if not isinstance(query_config, dict):
+                logger.warning(f"跳过非字典查询配置: {query_config}")
+                continue
                 
-                query_text = query_config["query"]
-                mode = query_config["mode"]
+            if "query" not in query_config:
+                logger.warning(f"跳过缺少查询文本的配置: {query_config}")
+                continue
                 
-                # 提取并设置top_k（如果提供）
-                if "top_k" in query_config and query_config["top_k"] != self.default_settings["top_k"]:
-                    try:
-                        top_k = int(query_config["top_k"])
-                        if top_k > 0:
-                            self.set_top_k(top_k)
-                        else:
-                            logger.warning(f"忽略无效的top_k值: {top_k}")
-                    except (ValueError, TypeError) as e:
-                        logger.warning(f"设置top_k时出错: {e}")
-                
-                # 根据模式执行查询
+            if "mode" not in query_config:
+                logger.warning(f"跳过缺少运行模式的配置: {query_config}")
+                continue
+            
+            query_text = query_config["query"]
+            mode = query_config["mode"]
+            only_most_related_articles = query_config.get("only_most_related_articles", False)
+            # 提取并设置top_k（如果提供）
+            if "top_k" in query_config and query_config["top_k"] != self.default_settings["top_k"]:
                 try:
-                    if mode == "run":
-                        # 普通查询模式
-                        result = self.run(query_text)
-                        
-                    elif mode == "run_with_selected_title":
-                        # 按标题过滤的查询模式
-                        if "title" not in query_config:
-                            logger.warning(f"缺少title参数，无法执行run_with_selected_title: {query_config}")
-                            continue
-                            
-                        title = query_config["title"]
-                        soft_match = query_config.get("soft_match", True)
-                        similarity_threshold = query_config.get("similarity_threshold", 0.5)
-                        
-                        result = self.run_with_selected_title(
-                            query=query_text,
-                            title=title,
-                            soft_match=soft_match,
-                            similarity_threshold=similarity_threshold
-                        )
-                        
+                    top_k = int(query_config["top_k"])
+                    if top_k > 0:
+                        self.set_top_k(top_k)
                     else:
-                        logger.warning(f"未知的查询模式: {mode}")
+                        logger.warning(f"忽略无效的top_k值: {top_k}")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"设置top_k时出错: {e}")
+            
+            # 根据模式执行查询
+            try:
+                if mode == "run":
+                    # 普通查询模式
+                    logger.debug(f"执行普通查询模式: {query_text}")
+                    result = self.run(query_text, only_most_related_articles)
+
+                elif mode == "run_with_references":
+                    # 带参考文献的查询模式
+                    logger.debug(f"执行带参考文献的查询模式: {query_text}")
+                    result = self.get_answer(query_text, top_k=self.default_settings["top_k"], include_references=True)
+                    
+                elif mode == "run_with_selected_title":
+                    # 按标题过滤的查询模式
+                    logger.debug(f"执行按标题过滤的查询模式: {query_text}")
+                    if "title" not in query_config:
+                        logger.warning(f"缺少title参数，无法执行run_with_selected_title: {query_config}")
                         continue
                         
-                    # 添加查询配置信息到结果中
-                    result["query_config"] = query_config
-                    results.append(result)
+                    title = query_config["title"]
+                    soft_match = query_config.get("soft_match", True)
+                    similarity_threshold = query_config.get("similarity_threshold", 0.5)
                     
-                except Exception as e:
-                    logger.error(f"执行查询时出错: {e}", exc_info=True)
-                    # 添加错误信息到结果
-                    error_result = {
-                        "error": str(e),
-                        "query_config": query_config
-                    }
-                    results.append(error_result)
+                    result = self.run_with_selected_title(
+                        query=query_text,
+                        title=title,
+                        soft_match=soft_match,
+                        similarity_threshold=similarity_threshold
+                    )
                     
-        finally:
-            # 恢复原始top_k
-            if self.default_settings["top_k"] != original_top_k:
-                self.set_top_k(original_top_k)
+                else:
+                    logger.warning(f"未知的查询模式: {mode}")
+                    continue
+                    
+                # 添加查询配置信息到结果中
+                result["query_config"] = query_config
+                results.append(result)
                 
+            except Exception as e:
+                logger.error(f"执行查询时出错: {e}", exc_info=True)
+                # 添加错误信息到结果
+                error_result = {
+                    "error": str(e),
+                    "query_config": query_config
+                }
+                results.append(error_result)
+                    
         return results

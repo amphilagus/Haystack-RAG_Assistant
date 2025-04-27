@@ -12,10 +12,10 @@ import chromadb
 
 # 导入rag_assistant的相关模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from .rag.collection_metadata import list_collections, get_collection_metadata, delete_collection_metadata
-from .rag.document_loader import load_documents, chunk_documents
-from .rag.rag_pipeline import RAGPipeline
-from .rag.custom_document_store import CustomChromaDocumentStore
+from .collection_metadata import list_collections, get_collection_metadata, delete_collection_metadata
+from .document_loader import load_documents, chunk_documents
+from ..pipeline.basic import RAGPipeline
+from .custom_document_store import CustomChromaDocumentStore
 
 
 class DatabaseManager:

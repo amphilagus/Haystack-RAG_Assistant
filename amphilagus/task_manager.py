@@ -469,8 +469,8 @@ class TaskManager:
         # 导入依赖项
         try:
             # 动态导入RAGPipeline，避免循环导入
-            from .rag.rag_pipeline import RAGPipeline
-            from .rag.collection_metadata import get_embedding_model
+            from .pipeline.basic import RAGPipeline
+            from .database.collection_metadata import get_embedding_model
         except ImportError:
             logger.error("无法导入RAGPipeline，请确保RAG组件已正确安装")
             task.error = "无法导入RAGPipeline，请确保RAG组件已正确安装"

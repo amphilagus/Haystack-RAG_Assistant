@@ -2,6 +2,8 @@
 import os
 import json
 import logging
+
+from dotenv import load_dotenv
 from .logger import get_logger
 from .utils.md_cleaner.md_cleaner import clean_markdown
 
@@ -105,3 +107,16 @@ def allowed_file(filename):
     """检查文件类型是否允许"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS 
+
+# Try to load from .env file
+load_dotenv(dotenv_path=WORKSPACE_DIR, override=True)
+api_key = os.getenv("OPENAI_API_KEY")
+
+# 基础类标签定义
+BASE_TAGS = {
+    "期刊类型": "对文献来源期刊的分类",
+    "发表时间": "文献发表的年份或时间段",
+    "研究领域": "文献所属的研究方向或领域",
+    "评分": "文献的评分或重要性分级",
+    "其他": "用户自定义分类，可用于特殊目的或临时分类"
+}

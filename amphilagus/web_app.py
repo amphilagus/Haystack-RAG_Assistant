@@ -3,289 +3,38 @@ Web application for Amphilagus project management.
 """
 import os
 import json
-import time
-import shutil
 import datetime
 import tempfile
-from pathlib import Path
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
 from werkzeug.utils import secure_filename
-from dotenv import load_dotenv
-import logging
-import uuid
-import re
-import openai
 
+from .database.document_loader import load_documents
+from .pipeline.basic import RAGPipeline
+from .database.collection_metadata import get_embedding_model
 from .assistant import MCPToolAgent
 from .literature import Literature
 
-from .logger import get_logger
-from .file_manager import FileManager
 from . import config
+from . import manager
 
-# Import RAG components with fallback
-try:
-    from .rag.document_loader import load_documents
-    from .rag.rag_pipeline import RAGPipeline
-    from .rag.collection_metadata import get_embedding_model
-    HAS_RAG = True
-except ImportError:
-    logger.warning("RAG Assistant modules not found. Vector database functions will be limited.")
-    HAS_RAG = False
-
-# 解决循环引用问题，延迟导入
-def get_task_manager():
-    from .task_manager import TaskManager
-    return TaskManager
-
-def get_database_manager():
-    from .database_manager import DatabaseManager
-    return DatabaseManager
-
+from .logger import get_logger
 # Configure logger based on environment variable
 logger = get_logger('web_app')
 logger.info("初始化Web应用")
 
-# 获取API密钥的函数
-def get_api_key():
-    """
-    Try to get API key from various sources
-    
-    Returns:
-        API key or None
-    """
-    # Try from environment variables
-    api_key = os.getenv("OPENAI_API_KEY")
-    if api_key:
-        return api_key
-    
-    # Try to load from .env file
-    load_dotenv(override=True)
-    api_key = os.getenv("OPENAI_API_KEY")
-    if api_key:
-        return api_key
-    
-    # Try to read directly from .env file
-    try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        env_path = os.path.join(current_dir, '.env')
-        if os.path.isfile(env_path):
-            with open(env_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.startswith('OPENAI_API_KEY'):
-                        api_key = line.split('=', 1)[1].strip().strip('"').strip("'")
-                        # Manually set environment variable
-                        os.environ["OPENAI_API_KEY"] = api_key
-                        return api_key
-    except Exception as e:
-        logger.error(f"Error reading .env file directly: {e}")
-    
-    return None
-
-# 设置工作空间目录 - 优先使用环境变量中的工作空间目录
-config.WORKSPACE_DIR = os.environ.get('AMPHILAGUS_WORKSPACE')
-if config.WORKSPACE_DIR:
-    # 使用环境变量中设置的工作空间目录
-    logger.info(f"使用环境变量设置的工作空间目录: {config.WORKSPACE_DIR}")
-else:
-    # 如果未设置环境变量，则使用默认的项目根目录（仅用于开发环境）
-    config.WORKSPACE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    logger.warning(f"未设置AMPHILAGUS_WORKSPACE环境变量，使用默认目录: {config.WORKSPACE_DIR}")
-
-# 配置文件路径 
-MD_CLEANER_CONFIG_PATH = os.path.join(config.WORKSPACE_DIR, 'configs','md_cleaner_config.json')
-# 标题提取配置路径
-TITLE_EXTRACTOR_CONFIG_PATH = os.path.join(config.WORKSPACE_DIR, 'configs','title_extractor_config.json')
-
-## 数据存储相关路径
-# 设置ChromaDB路径
-CHROMA_DB_PATH = os.path.join(config.WORKSPACE_DIR, 'chroma_db')
-# 设置files目录
-FILES_DIR = os.path.join(config.WORKSPACE_DIR, 'files')
-# 确保files目录存在
-os.makedirs(FILES_DIR, exist_ok=True)
-# 设置raw_files路径
-RAW_FILES_PATH = os.path.join(FILES_DIR, 'raw_files')
-os.makedirs(RAW_FILES_PATH, exist_ok=True)
-# 设置raw_files_metadata路径
-RAW_FILES_METADATA_PATH = os.path.join(FILES_DIR, 'raw_files_metadata.json')
-# 设置backup_files路径
-BACKUP_FILES_PATH = os.path.join(FILES_DIR, 'backup_files')
-os.makedirs(BACKUP_FILES_PATH, exist_ok=True)
-# 设置tasks路径
-TASKS_PATH = os.path.join(config.WORKSPACE_DIR, 'tasks')
-os.makedirs(TASKS_PATH, exist_ok=True)
-
-# 记录所有路径变量
-logger.debug("Initialized paths:")
-logger.debug(f"MD_CLEANER_CONFIG_PATH: {MD_CLEANER_CONFIG_PATH}")
-logger.debug(f"CHROMA_DB_PATH: {CHROMA_DB_PATH}")
-logger.debug(f"RAW_FILES_PATH: {RAW_FILES_PATH}")
-logger.debug(f"RAW_FILES_METADATA_PATH: {RAW_FILES_METADATA_PATH}")
-logger.debug(f"BACKUP_FILES_PATH: {BACKUP_FILES_PATH}")
-logger.debug(f"TITLE_EXTRACTOR_CONFIG_PATH: {TITLE_EXTRACTOR_CONFIG_PATH}")
-
-# 尝试加载配置文件
-try:
-    # 加载MD清理配置
-    if os.path.exists(MD_CLEANER_CONFIG_PATH):
-        with open(MD_CLEANER_CONFIG_PATH, 'r', encoding='utf-8') as f:
-            config.MD_CLEANER_CONFIG = json.load(f)
-    else:
-        logger.error(f"MD cleaner config file not found at {MD_CLEANER_CONFIG_PATH}")
-        raise FileNotFoundError(f"必需的配置文件未找到: {MD_CLEANER_CONFIG_PATH}")
-        
-    # 加载标题提取配置
-    if os.path.exists(TITLE_EXTRACTOR_CONFIG_PATH):
-        with open(TITLE_EXTRACTOR_CONFIG_PATH, 'r', encoding='utf-8') as f:
-            config.TITLE_EXTRACTOR_CONFIG = json.load(f)
-    else:
-        logger.error(f"Title extractor config file not found at {TITLE_EXTRACTOR_CONFIG_PATH}")
-        raise FileNotFoundError(f"必需的配置文件未找到: {TITLE_EXTRACTOR_CONFIG_PATH}")
-    
-    # 验证配置文件格式
-    if "first_non_empty" not in config.TITLE_EXTRACTOR_CONFIG or "journals" not in config.TITLE_EXTRACTOR_CONFIG["first_non_empty"] or "default" not in config.TITLE_EXTRACTOR_CONFIG["first_non_empty"]["journals"]:
-        raise ValueError("标题提取配置文件结构不正确，缺少 'first_non_empty.journals.default' 路径")
-        
-except Exception as e:
-    logger.error(f"配置文件加载失败: {str(e)}")
-    raise RuntimeError(f"配置文件加载失败，应用无法启动: {str(e)}")
-
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev_key_replace_in_production')
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max upload
-app.config['UPLOAD_FOLDER'] = RAW_FILES_PATH
+app.config['UPLOAD_FOLDER'] = config.RAW_FILES_PATH
 
 # 记录Flask应用配置
 logger.debug(f"Flask app initialized with UPLOAD_FOLDER: {app.config['UPLOAD_FOLDER']}")
 logger.debug(f"Flask app MAX_CONTENT_LENGTH: {app.config['MAX_CONTENT_LENGTH']} bytes")
 
-# 允许的文件扩展名
-ALLOWED_EXTENSIONS = {'txt', 'pdf', 'md'}
 
-# 基础类标签定义
-BASE_TAGS = {
-    "期刊类型": "对文献来源期刊的分类",
-    "发表时间": "文献发表的年份或时间段",
-    "研究领域": "文献所属的研究方向或领域",
-    "评分": "文献的评分或重要性分级",
-    "其他": "用户自定义分类，可用于特殊目的或临时分类"
-}
-
-# 预设次级标签定义
-PRESET_SUBTAGS = {
-    "期刊类型": [
-        "Nature", "Science", "JCTC", "npj Computational Materials", "PRL", "PRE"
-    ],
-    "发表时间": [
-        "2025年", "2024年", "2023年", "2022年", "2021年", "2020年", "2019年", "2018年"
-    ],
-    "研究领域": [
-        "量子化学", "分子动力学", "机器学习"
-    ],
-    "评分": [
-        "五星 (必读)", "四星 (重要)", "三星 (有用)", "二星 (一般)", "一星 (参考)"
-    ]
-}
-
-# Initialize the FileManager directly
-file_manager = FileManager(raw_files_dir=RAW_FILES_PATH, backup_files_dir=BACKUP_FILES_PATH)
-
-# 初始化数据库管理器
-db_manager = get_database_manager()(chroma_db_path=CHROMA_DB_PATH)
-
-# 初始化任务管理器
-try:
-    task_manager = get_task_manager()(TASKS_PATH, file_manager, db_manager)
-    logger.info("Task manager successfully initialized")
-except Exception as e:
-    logger.error(f"Error initializing task manager: {str(e)}")
-    task_manager = None
-
-# 确保基础类标签和预设次级标签存在
-def ensure_base_tags():
-    existing_tags = {tag.name: tag for tag in file_manager.list_tags()}
-    
-    # 创建/更新基础类标签
-    for tag_name, description in BASE_TAGS.items():
-        if tag_name not in existing_tags:
-            tag = file_manager.create_tag(tag_name)
-            # 标记为基础类标签，不可删除
-            tag.is_base_tag = True
-            # 不是预设标签
-            if hasattr(tag, 'is_preset_tag'):
-                tag.is_preset_tag = False
-            logger.debug(f"Created base tag: {tag_name}")
-        else:
-            # 确保现有标签也被标记为基础类
-            existing_tags[tag_name].is_base_tag = True
-            # 不是预设标签
-            if hasattr(existing_tags[tag_name], 'is_preset_tag'):
-                existing_tags[tag_name].is_preset_tag = False
-    
-    # 收集所有当前配置的预设标签名字（扁平列表）
-    current_preset_tags = []
-    for parent_name, subtags in PRESET_SUBTAGS.items():
-        current_preset_tags.extend(subtags)
-    
-    # 先将所有标签的预设标签属性设置为False，除非它们在当前的预设列表中
-    for tag_name, tag in existing_tags.items():
-        # 确保所有标签都有is_preset_tag属性
-        if not hasattr(tag, 'is_preset_tag'):
-            tag.is_preset_tag = False
-            
-        # 如果标签在当前预设列表中，标记为预设
-        if tag_name in current_preset_tags:
-            tag.is_preset_tag = True
-        
-        # 确保基础类标签不是预设标签
-        if tag.is_base_tag and not tag.parent:
-            tag.is_preset_tag = False
-    
-    # 创建/更新当前配置的预设次级标签
-    for parent_name, subtags in PRESET_SUBTAGS.items():
-        # 确保父标签存在
-        if parent_name not in existing_tags:
-            continue
-            
-        parent_tag = existing_tags[parent_name]
-        
-        for subtag_name in subtags:
-            # 尝试创建标签（如果已存在则获取现有标签）
-            if subtag_name in existing_tags:
-                subtag = existing_tags[subtag_name]
-                # 标记为预设标签
-                subtag.is_preset_tag = True
-                # 不是基础类标签（可删除）
-                subtag.is_base_tag = False
-                # 确保父标签关系正确（可能是从其他类别转移过来的）
-                subtag.parent = parent_tag
-            else:
-                # 创建新的预设次级标签
-                try:
-                    subtag = file_manager.create_tag(subtag_name, parent_name=parent_name)
-                    # 标记为预设标签
-                    subtag.is_preset_tag = True
-                    # 不是基础类标签（可删除）
-                    subtag.is_base_tag = False
-                except ValueError:
-                    # 如果标签已存在但命名不同，则跳过
-                    continue
-    
-    # 保存更改
-    file_manager._save_metadata()
-
-# 移除 @app.before_first_request 装饰器，改为在应用启动前直接调用
 # 在每个请求前执行初始化检查
 @app.before_request
 def before_request():
-    global task_manager
-    ensure_base_tags()
-    
-    # 延迟初始化任务管理器，确保amphilagus实例已经初始化
-    if task_manager is None:
-        task_manager = get_task_manager().get_instance(amphilagus=file_manager)
-    
     # 配置默认日期格式
     if 'datetime' not in app.jinja_env.filters:
         app.jinja_env.filters['datetime'] = datetime.datetime.strftime
@@ -311,17 +60,9 @@ if 'rag_session' not in app.config:
 @app.route('/rag_assistant')
 def rag_assistant():
     """RAG Assistant页面路由"""
-    if not HAS_RAG:
-        flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
-        return redirect(url_for('index'))
-    
-    # 检查环境变量中是否有API密钥
-    api_key = get_api_key()
-    if not api_key:
-        flash('未找到环境变量中的OpenAI API密钥，请设置OPENAI_API_KEY环境变量', 'warning')
     
     # 获取可用集合
-    collections = db_manager.list_collections()
+    collections = manager.database.list_collections()
     collection_names = [col["name"] for col in collections if col.get("exists_in_chroma", False)]
     
     # 获取当前集合信息
@@ -330,7 +71,7 @@ def rag_assistant():
     
     if current_collection in collection_names:
         try:
-            chroma_client = db_manager.client
+            chroma_client = manager.database.client
             if chroma_client:
                 collection = chroma_client.get_collection(current_collection)
                 collection_info = {"exists": True, "count": collection.count()}
@@ -355,15 +96,6 @@ def rag_assistant():
 @app.route('/rag_assistant/config', methods=['POST'])
 def rag_assistant_config():
     """处理RAG Assistant配置更新"""
-    if not HAS_RAG:
-        flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
-        return redirect(url_for('rag_assistant'))
-    
-    # 检查环境变量中是否有API密钥
-    api_key = get_api_key()
-    if not api_key:
-        flash('未找到环境变量中的OpenAI API密钥，请设置OPENAI_API_KEY环境变量', 'error')
-        return redirect(url_for('rag_assistant'))
     
     # 获取表单数据
     collection_name = request.form.get('collection_name', 'documents')
@@ -384,7 +116,7 @@ def rag_assistant_config():
         rag_pipeline = RAGPipeline(
             embedding_model=embedding_model,
             llm_model=llm_model,
-            persist_dir=CHROMA_DB_PATH,
+            persist_dir=config.CHROMA_DB_PATH,
             collection_name=collection_name,
             prompt_template=prompt_template
         )
@@ -433,7 +165,7 @@ def find_backup_files_by_title(title):
     """
 
     # 如果目录不存在，返回None
-    if not os.path.exists(BACKUP_FILES_PATH):
+    if not os.path.exists(config.BACKUP_FILES_PATH):
         return None
     
     # 将标题转换为可能的文件名模式（移除特殊字符）
@@ -442,7 +174,7 @@ def find_backup_files_by_title(title):
     
     # 查找匹配的文件
     matching_files = []
-    for filename in os.listdir(BACKUP_FILES_PATH):
+    for filename in os.listdir(config.BACKUP_FILES_PATH):
         file_base = os.path.splitext(filename)[0]
         # 两种匹配方式：1. 正则表达式模糊匹配 2. 标题是文件名的一部分
         if (re.search(title_pattern, file_base, re.IGNORECASE) or 
@@ -458,10 +190,6 @@ def find_backup_files_by_title(title):
 @app.route('/rag_assistant/chat', methods=['POST'])
 def rag_assistant_chat():
     """处理RAG Assistant聊天请求"""
-    if not HAS_RAG:
-        flash('未能导入RAG Assistant模块，请确保安装了所有依赖', 'error')
-        return redirect(url_for('rag_assistant'))
-    
     # 检查是否已初始化
     if not app.config['rag_session'].get('initialized', False) or app.config['rag_session'].get('rag_pipeline') is None:
         flash('请先初始化RAG助手', 'warning')
@@ -563,9 +291,9 @@ def index():
 @app.route('/files')
 def list_files():
     """List all files."""
-    files = file_manager.list_files()
+    files = manager.file.list_files()
     # Pass BASE_TAGS to template for filtering in the frontend
-    return render_template('files.html', files=files, filter_tags=None, exact=False, base_tag_names=list(BASE_TAGS.keys()))
+    return render_template('files.html', files=files, filter_tags=None, exact=False, base_tag_names=list(config.BASE_TAGS.keys()))
 
 
 @app.route('/files/filter', methods=['GET'])
@@ -581,32 +309,32 @@ def filter_files():
     
     if not tags:
         # 没有标签，显示所有文件
-        files = file_manager.list_files()
+        files = manager.file.list_files()
     elif len(tags) == 1:
         # 单个标签过滤，使用现有方法
-        files = file_manager.get_files_by_tag(tags[0], include_subclasses=not exact)
+        files = manager.file.get_files_by_tag(tags[0], include_subclasses=not exact)
     else:
         # 多个标签过滤 - 使用文件名（可哈希）而不是Metadata对象（不可哈希）
         
         # 获取所有文件作为参考集
-        all_files = {file.filename: file for file in file_manager.list_files()}
+        all_files = {file.filename: file for file in manager.file.list_files()}
         
         # 获取第一个标签的文件名集合
         first_tag_files = set(file.filename for file in 
-                             file_manager.get_files_by_tag(tags[0], include_subclasses=not exact))
+                             manager.file.get_files_by_tag(tags[0], include_subclasses=not exact))
         
         # 与其他标签文件名集合求交集
         matching_filenames = first_tag_files
         for tag in tags[1:]:
             tag_filenames = set(file.filename for file in 
-                               file_manager.get_files_by_tag(tag, include_subclasses=not exact))
+                               manager.file.get_files_by_tag(tag, include_subclasses=not exact))
             matching_filenames = matching_filenames.intersection(tag_filenames)
         
         # 转换回Metadata对象列表
         files = [all_files[filename] for filename in matching_filenames if filename in all_files]
     
     # Pass BASE_TAGS to template for filtering in the frontend
-    return render_template('files.html', files=files, filter_tags=tags, exact=exact, base_tag_names=list(BASE_TAGS.keys()))
+    return render_template('files.html', files=files, filter_tags=tags, exact=exact, base_tag_names=list(config.BASE_TAGS.keys()))
 
 
 # Import the PDF converter
@@ -623,8 +351,8 @@ def upload_file():
     """文件上传页面与处理"""
     if request.method == 'GET':
         # 获取标签列表用于显示
-        tags = file_manager.list_tags()
-        recent_tasks = task_manager.get_recent_tasks(5)
+        tags = manager.file.list_tags()
+        recent_tasks = manager.task.get_recent_tasks(5)
         return render_template('upload.html', tags=tags, recent_tasks=recent_tasks)
     
     # 处理AJAX和表单上传
@@ -677,7 +405,7 @@ def upload_file():
                 })
         
         # 创建上传任务
-        task = task_manager.create_task(
+        task = manager.task.create_task(
             task_type='file_upload',
             files=task_files,
             params={
@@ -715,7 +443,7 @@ def upload_file():
 @app.route('/files/<filename>/delete', methods=['POST'])
 def delete_file(filename):
     """Delete a file."""
-    if file_manager.delete_file(filename):
+    if manager.file.delete_file(filename):
         flash(f'File {filename} deleted successfully')
     else:
         flash(f'Error deleting file {filename}')
@@ -737,7 +465,7 @@ def batch_delete_files():
     
     for filename in filenames:
         try:
-            if file_manager.delete_file(filename):
+            if manager.file.delete_file(filename):
                 success_count += 1
             else:
                 failed_files.append(filename)
@@ -788,7 +516,7 @@ def batch_embed_files():
         # 获取完整的文件路径
         file_paths = []
         for filename in filenames:
-            file_path = os.path.join(RAW_FILES_PATH, filename)
+            file_path = os.path.join(config.RAW_FILES_PATH, filename)
             if os.path.exists(file_path):
                 file_paths.append(file_path)
             else:
@@ -799,7 +527,7 @@ def batch_embed_files():
             return redirect(url_for('list_files'))
         
         # 创建批量嵌入任务，而不是直接处理
-        task = task_manager.create_task(
+        task = manager.task.create_task(
             task_type='batch_embed',
             params={
                 'collection_name': collection_name,
@@ -833,7 +561,7 @@ def batch_embed_files():
 @app.route('/files/<filename>/tags', methods=['GET', 'POST'])
 def manage_file_tags(filename):
     """Manage tags for a file."""
-    file_metadata = file_manager.get_file_metadata(filename)
+    file_metadata = manager.file.get_file_metadata(filename)
     
     if not file_metadata:
         flash(f'File {filename} not found')
@@ -845,13 +573,13 @@ def manage_file_tags(filename):
         tags = [tag.strip() for tag in tags if tag.strip()]
         
         if action == 'add' and tags:
-            if file_manager.add_tags_to_file(filename, tags):
+            if manager.file.add_tags_to_file(filename, tags):
                 flash(f'Tags added to {filename}')
             else:
                 flash(f'Error adding tags to {filename}')
         
         elif action == 'remove' and tags:
-            if file_manager.remove_tags_from_file(filename, tags):
+            if manager.file.remove_tags_from_file(filename, tags):
                 flash(f'Tags removed from {filename}')
             else:
                 flash(f'Error removing tags from {filename}')
@@ -859,14 +587,14 @@ def manage_file_tags(filename):
         return redirect(url_for('manage_file_tags', filename=filename))
     
     # GET request
-    all_tags = file_manager.list_tags()
+    all_tags = manager.file.list_tags()
     return render_template('file_tags.html', file=file_metadata, all_tags=all_tags)
 
 
 @app.route('/files/<filename>/details')
 def file_details(filename):
     """通过重定向在新页面查看文件"""
-    file_metadata = file_manager.get_file_metadata(filename)
+    file_metadata = manager.file.get_file_metadata(filename)
     
     if not file_metadata:
         flash(f'文件 {filename} 不存在')
@@ -883,8 +611,8 @@ def view_backup_files(filename):
     
     # 查找同名文件（可能有不同的扩展名）
     matching_files = []
-    if os.path.exists(BACKUP_FILES_PATH):
-        for f in os.listdir(BACKUP_FILES_PATH):
+    if os.path.exists(config.BACKUP_FILES_PATH):
+        for f in os.listdir(config.BACKUP_FILES_PATH):
             if os.path.splitext(f)[0] == filename_no_ext:
                 matching_files.append(f)
     
@@ -899,7 +627,7 @@ def view_backup_files(filename):
         return redirect(url_for('list_files'))
     
     # 构建完整文件路径
-    file_path = os.path.join(BACKUP_FILES_PATH, matching_files[0])
+    file_path = os.path.join(config.BACKUP_FILES_PATH, matching_files[0])
     backup_filesname = matching_files[0]
     
     # 发送文件
@@ -915,21 +643,21 @@ def reload_database():
     """重新加载数据库集合信息"""
     try:
         # 重新初始化数据库管理器的客户端连接
-        if db_manager.client is not None:
+        if manager.database.client is not None:
             # 关闭现有客户端连接
             try:
-                del db_manager.client
+                del manager.database.client
             except:
                 pass
             
         # 重新创建客户端连接
         import chromadb
         try:
-            db_manager.client = chromadb.PersistentClient(path=str(db_manager.chroma_db_path))
+            manager.database.client = chromadb.PersistentClient(path=str(manager.database.chroma_db_path))
             app.logger.info("成功重新初始化ChromaDB客户端连接")
             
             # 刷新集合列表
-            db_manager.list_collections()
+            manager.database.list_collections()
             
             return jsonify({"success": True, "message": "数据库集合信息已重新加载"}), 200
         except Exception as e:
@@ -944,11 +672,8 @@ def reload_database():
 def delete_collection(collection_name):
     """删除集合"""
     try:
-        if not HAS_RAG:
-            return redirect(url_for('database_dashboard', error='RAG模块未导入，无法删除集合'))
-        
-        # 使用db_manager删除集合
-        success, message = db_manager.delete_collection(collection_name)
+        # 使用manager.database删除集合
+        success, message = manager.database.delete_collection(collection_name)
         
         if success:
             return redirect(url_for('database_dashboard', success=f'集合"{collection_name}"已成功删除'))
@@ -977,7 +702,7 @@ def datetimeformat(value, format='%Y-%m-%d %H:%M'):
 @app.route('/files/<filename>/update_description', methods=['POST'])
 def update_description(filename):
     """Update file description."""
-    file_metadata = file_manager.get_file_metadata(filename)
+    file_metadata = manager.file.get_file_metadata(filename)
     
     if not file_metadata:
         flash(f'File {filename} not found')
@@ -988,7 +713,7 @@ def update_description(filename):
     try:
         # 更新描述
         file_metadata.description = new_description
-        file_manager._save_metadata()
+        manager.file._save_metadata()
         flash(f'文件描述已更新')
     except Exception as e:
         flash(f'更新描述时出错: {str(e)}')
@@ -999,17 +724,13 @@ def update_description(filename):
 @app.route('/tags')
 def list_tags():
     """List all tags."""
-    tags = file_manager.list_tags()
-    # 确保基础类标签已标记
-    ensure_base_tags()
+    tags = manager.file.list_tags()
     return render_template('tags.html', tags=tags)
 
 
 @app.route('/tags/restore_presets', methods=['POST'])
 def restore_preset_tags():
     """恢复所有预设标签"""
-    # 强制更新所有预设标签
-    ensure_base_tags()
     flash('已恢复所有预设标签')
     return redirect(url_for('list_tags'))
 
@@ -1031,7 +752,7 @@ def create_tag():
             return redirect(request.url)
         
         try:
-            tag = file_manager.create_tag(name, parent_name=parent)
+            tag = manager.file.create_tag(name, parent_name=parent)
             # 确保新标签不是预设标签和基础类标签
             tag.is_preset_tag = False
             tag.is_base_tag = False
@@ -1042,9 +763,8 @@ def create_tag():
             return redirect(request.url)
     
     # GET request
-    existing_tags = file_manager.list_tags()
-    # 确保基础类标签存在
-    ensure_base_tags()
+    existing_tags = manager.file.list_tags()
+
     # 过滤出基础类标签作为父标签选项
     base_tags = [tag for tag in existing_tags if hasattr(tag, 'is_base_tag') and tag.is_base_tag and not tag.parent]
     return render_template('create_tag.html', existing_tags=existing_tags, base_tags=base_tags)
@@ -1054,7 +774,7 @@ def create_tag():
 def delete_tag(tag_name):
     """Delete a tag."""
     # 获取标签
-    tag = file_manager.get_tag(tag_name)
+    tag = manager.file.get_tag(tag_name)
     
     if not tag:
         flash(f'标签 {tag_name} 不存在')
@@ -1071,15 +791,15 @@ def delete_tag(tag_name):
     # 实现标签删除逻辑
     try:
         # 获取所有使用此标签的文件
-        files_with_tag = file_manager.get_files_by_tag(tag_name)
+        files_with_tag = manager.file.get_files_by_tag(tag_name)
         
         # 从文件中移除此标签
         for file in files_with_tag:
-            file_manager.remove_tags_from_file(file.filename, [tag_name])
+            manager.file.remove_tags_from_file(file.filename, [tag_name])
         
         # 从标签注册表中删除
-        if hasattr(file_manager, 'delete_tag'):
-            file_manager.delete_tag(tag_name)
+        if hasattr(manager.file, 'delete_tag'):
+            manager.file.delete_tag(tag_name)
             if is_preset:
                 flash(f'预设标签 {tag_name} 已删除，可通过"恢复预设标签"按钮恢复')
             else:
@@ -1096,14 +816,14 @@ def delete_tag(tag_name):
 @app.route('/api/files', methods=['GET'])
 def api_list_files():
     """API endpoint to list files."""
-    files = file_manager.list_files()
+    files = manager.file.list_files()
     return jsonify([file.to_dict() for file in files])
 
 
 @app.route('/api/tags', methods=['GET'])
 def api_list_tags():
     """API endpoint to list tags."""
-    tags = file_manager.list_tags()
+    tags = manager.file.list_tags()
     return jsonify([{"name": tag.name, "parent": tag.parent.name if tag.parent else None} for tag in tags])
 
 
@@ -1111,7 +831,7 @@ def api_list_tags():
 def api_list_collections():
     """API endpoint to list vector database collections."""
     try:
-        collections_info = db_manager.list_collections()
+        collections_info = manager.database.list_collections()
         collections = []
         
         for collection_info in collections_info:
@@ -1131,7 +851,7 @@ def api_list_collections():
 @app.route('/tasks')
 def view_tasks():
     """查看所有任务"""
-    tasks = task_manager.get_all_tasks()
+    tasks = manager.task.get_all_tasks()
     # 按创建时间倒序排序
     tasks.sort(key=lambda t: t.created_at, reverse=True)
     return render_template('tasks.html', tasks=tasks)
@@ -1140,7 +860,7 @@ def view_tasks():
 @app.route('/tasks/<task_id>')
 def view_task(task_id):
     """查看单个任务详情"""
-    task = task_manager.get_task(task_id)
+    task = manager.task.get_task(task_id)
     if not task:
         flash('任务不存在', 'error')
         return redirect(url_for('view_tasks'))
@@ -1150,7 +870,7 @@ def view_task(task_id):
 @app.route('/api/tasks/<task_id>/status')
 def get_task_status(task_id):
     """获取任务状态 API"""
-    status = task_manager.get_task_status(task_id)
+    status = manager.task.get_task_status(task_id)
     if status:
         return jsonify(status)
     return jsonify({"error": "任务不存在"}), 404
@@ -1159,14 +879,14 @@ def get_task_status(task_id):
 @app.route('/api/tasks/<task_id>/delete', methods=['POST'])
 def delete_task(task_id):
     """删除任务 API"""
-    success, message = task_manager.delete_task(task_id)
+    success, message = manager.task.delete_task(task_id)
     return jsonify({"success": success, "message": message})
 
 
 @app.route('/api/tasks/clear-completed', methods=['POST'])
 def clear_completed_tasks():
     """清除已完成的任务 API"""
-    count = task_manager.clear_completed_tasks()
+    count = manager.task.clear_completed_tasks()
     return jsonify({"success": True, "message": f"已清除 {count} 个已完成的任务"})
 
 
@@ -1183,16 +903,11 @@ if 'universal_assistant_session' not in app.config:
 @app.route('/universal_assistant')
 def universal_assistant():
     """全能助手页面路由"""
-    
-    # 检查环境变量中是否有API密钥
-    api_key = get_api_key()
-    if not api_key:
-        flash('未找到环境变量中的OpenAI API密钥，请设置OPENAI_API_KEY环境变量', 'warning')
-    
+
     # 初始化临时代理以获取可用工具
     available_tools = []
     try:
-        temp_agent = MCPToolAgent(api_key=api_key)
+        temp_agent = MCPToolAgent(api_key=config.api_key)
         available_tools = temp_agent.get_available_tools()
     except Exception as e:
         app.logger.error(f"获取可用工具时出错: {str(e)}")
@@ -1213,12 +928,6 @@ def universal_assistant():
 def universal_assistant_config():
     """处理全能助手配置更新"""
     
-    # 检查环境变量中是否有API密钥
-    api_key = get_api_key()
-    if not api_key:
-        flash('未找到环境变量中的OpenAI API密钥，请设置OPENAI_API_KEY环境变量', 'error')
-        return redirect(url_for('universal_assistant'))
-    
     # 获取表单数据
     llm_model = request.form.get('llm_model', 'gpt-4o')
     
@@ -1230,7 +939,7 @@ def universal_assistant_config():
         mcp_agent = MCPToolAgent(
             model=llm_model,
             server_url="http://localhost:8000",  # MCP服务器URL
-            api_key=api_key
+            api_key=config.api_key
         )
         
         # 更新会话状态
@@ -1299,12 +1008,12 @@ def universal_assistant_chat():
                 role_badge = f'<span class="badge bg-primary">{msg.role}</span>'
                 step_badge = f'<span class="badge bg-secondary">步骤 {idx+1}</span>'
                 content = msg._content
-                debug_content += f'<div class="debug-message mb-2 p-2 border-bottom">{role_badge} {step_badge}<br>{content}</div>'
+                debug_content += f'<div class="debug-message mb-2 p-2 border-bottom" style="color: inherit;">{role_badge} {step_badge}<br>{content}</div>'
             
             # 记录助手回复
             assistant_message = {
                 "role": "assistant",
-                "content": f'<div class="debug-panel p-2 border rounded"><h6>调试模式输出：</h6>{debug_content}</div>',
+                "content": f'<div class="debug-panel p-2 border rounded" style="color: inherit;"><h6>调试模式输出：</h6>{debug_content}</div>',
                 "timestamp": datetime.datetime.now()
             }
             app.config['universal_assistant_session']['chat_history'].append(assistant_message)
@@ -1382,7 +1091,7 @@ def batch_clean_files():
         logger.info(f"批量清洗文件列表: {files}, 总数: {len(files)}")
         
         # 创建批量清洗任务
-        task = task_manager.create_task(
+        task = manager.task.create_task(
             task_type='batch_clean',
             params={
                 'files': files
@@ -1416,27 +1125,27 @@ def reload_config():
         title_config_before = len(config.TITLE_EXTRACTOR_CONFIG.keys()) if hasattr(config, 'TITLE_EXTRACTOR_CONFIG') else 0
         
         # 重新加载MD清理配置
-        if os.path.exists(MD_CLEANER_CONFIG_PATH):
-            with open(MD_CLEANER_CONFIG_PATH, 'r', encoding='utf-8') as f:
+        if os.path.exists(config.MD_CLEANER_CONFIG_PATH):
+            with open(config.MD_CLEANER_CONFIG_PATH, 'r', encoding='utf-8') as f:
                 config.MD_CLEANER_CONFIG = json.load(f)
-                logger.info(f"已重新加载MD清理配置文件: {MD_CLEANER_CONFIG_PATH}")
+                logger.info(f"已重新加载MD清理配置文件: {config.MD_CLEANER_CONFIG_PATH}")
                 # 在调试级别输出完整的配置内容
                 logger.debug(f"MD_CLEANER_CONFIG完整内容: {json.dumps(config.MD_CLEANER_CONFIG, ensure_ascii=False, indent=2)}")
         else:
-            logger.error(f"MD清理配置文件不存在: {MD_CLEANER_CONFIG_PATH}")
-            flash(f"MD清理配置文件不存在: {MD_CLEANER_CONFIG_PATH}", "danger")
+            logger.error(f"MD清理配置文件不存在: {config.MD_CLEANER_CONFIG_PATH}")
+            flash(f"MD清理配置文件不存在: {config.MD_CLEANER_CONFIG_PATH}", "danger")
             return redirect(request.referrer or url_for('index'))
         
         # 重新加载标题提取配置
-        if os.path.exists(TITLE_EXTRACTOR_CONFIG_PATH):
-            with open(TITLE_EXTRACTOR_CONFIG_PATH, 'r', encoding='utf-8') as f:
+        if os.path.exists(config.TITLE_EXTRACTOR_CONFIG_PATH):
+            with open(config.TITLE_EXTRACTOR_CONFIG_PATH, 'r', encoding='utf-8') as f:
                 config.TITLE_EXTRACTOR_CONFIG = json.load(f)
-                logger.info(f"已重新加载标题提取配置文件: {TITLE_EXTRACTOR_CONFIG_PATH}")
+                logger.info(f"已重新加载标题提取配置文件: {config.TITLE_EXTRACTOR_CONFIG_PATH}")
                 # 在调试级别输出完整的配置内容
                 logger.debug(f"TITLE_EXTRACTOR_CONFIG完整内容: {json.dumps(config.TITLE_EXTRACTOR_CONFIG, ensure_ascii=False, indent=2)}")
         else:
-            logger.error(f"标题提取配置文件不存在: {TITLE_EXTRACTOR_CONFIG_PATH}")
-            flash(f"标题提取配置文件不存在: {TITLE_EXTRACTOR_CONFIG_PATH}", "danger")
+            logger.error(f"标题提取配置文件不存在: {config.TITLE_EXTRACTOR_CONFIG_PATH}")
+            flash(f"标题提取配置文件不存在: {config.TITLE_EXTRACTOR_CONFIG_PATH}", "danger")
             return redirect(request.referrer or url_for('index'))
         
         # 验证配置文件格式
@@ -1467,8 +1176,6 @@ def run_app(host='0.0.0.0', port=5000, debug=False):
     """Run the web application."""
     # Create instance path for temporary files
     os.makedirs(app.instance_path, exist_ok=True)
-    # 确保基础类标签存在
-    ensure_base_tags()
     app.run(host=host, port=port, debug=debug)
 
 @app.route('/files/<filename>/rename', methods=['POST'])
@@ -1502,7 +1209,7 @@ def rename_file(filename):
         return redirect(url_for('list_files'))
     
     # 文件重命名操作
-    if file_manager.rename_file(filename, new_filename):
+    if manager.file.rename_file(filename, new_filename):
         flash(f'文件 {filename} 成功重命名为 {new_filename}', 'success')
     else:
         flash(f'重命名文件 {filename} 失败', 'error')
@@ -1514,21 +1221,21 @@ def rename_file(filename):
 def database_dashboard():
     """数据库管理面板"""
     try:
-        # 使用db_manager而不是直接调用导入的函数
-        collections_info = db_manager.list_collections()
+        # 使用manager.database而不是直接调用导入的函数
+        collections_info = manager.database.list_collections()
         
         # 获取数据库路径和状态统计
-        chroma_db_path = db_manager.get_db_path()
-        db_stats = db_manager.get_db_stats()
+        chroma_db_path = manager.database.get_db_path()
+        db_stats = manager.database.get_db_stats()
         
         # 打印调试信息
-        app.logger.debug(f"从db_manager获取到的集合列表: {collections_info}")
+        app.logger.debug(f"从manager.database获取到的集合列表: {collections_info}")
         
         if not collections_info:
             app.logger.warning("未检索到任何集合")
         
         # 创建Chroma客户端实例检查
-        if not db_manager.client:
+        if not manager.database.client:
             app.logger.error("ChromaDB客户端未初始化")
             return render_template('database.html', 
                                   collections=[],
@@ -1547,7 +1254,7 @@ def database_dashboard():
         app.logger.error(f"读取集合列表时出错: {str(e)}\n{traceback.format_exc()}")
         return render_template('database.html', 
                               collections=[],
-                              chroma_db_path=db_manager.get_db_path() if db_manager else "未知",
+                              chroma_db_path=manager.database.get_db_path() if manager.database else "未知",
                               db_stats={"total_collections": 0, "normal_collections": 0, 
                                         "missing_metadata": 0, "orphaned_metadata": 0, 
                                         "total_documents": 0},
@@ -1559,7 +1266,7 @@ def list_literature():
     # 加载所有文献
     literature_list = Literature.list_all()
     # 通过BASE_TAGS传递基础标签类型给前端，用于过滤
-    return render_template('literature.html', literature=literature_list, filter_tags=None, exact=False, base_tag_names=list(BASE_TAGS.keys()))
+    return render_template('literature.html', literature=literature_list, filter_tags=None, exact=False, base_tag_names=list(config.BASE_TAGS.keys()))
 
 
 @app.route('/literature/filter', methods=['GET'])
@@ -1594,7 +1301,7 @@ def filter_literature():
                     filtered_literature.append(lit)
     
     # 通过BASE_TAGS传递基础标签类型给前端，用于过滤
-    return render_template('literature.html', literature=filtered_literature, filter_tags=tags, exact=exact, base_tag_names=list(BASE_TAGS.keys()))
+    return render_template('literature.html', literature=filtered_literature, filter_tags=tags, exact=exact, base_tag_names=list(config.BASE_TAGS.keys()))
 
 
 @app.route('/literature/sync', methods=['POST'])
@@ -1607,9 +1314,9 @@ def sync_literature_tags():
         # 遍历每篇文献，加载标签并更新
         for lit in literature_list:
             # 从文件管理器中加载标签
-            lit.load_tags_from_json(file_manager)
+            lit.load_tags_from_json(manager.file)
             # 根据标签更新文献属性
-            lit.update_from_tags(file_manager)
+            lit.update_from_tags(manager.file)
             # 保存更新后的文献
             lit.save()
         
@@ -1631,7 +1338,7 @@ def update_literature_files():
         success_count = 0
         for lit in literature_list:
             # 更新文件标签，自动创建不存在的标签
-            if lit.update_file_tags(file_manager, auto_create_tags=True):
+            if lit.update_file_tags(manager.file, auto_create_tags=True):
                 success_count += 1
         
         flash(f'已更新 {success_count} 篇文献的文件标签', 'success')
@@ -1639,6 +1346,225 @@ def update_literature_files():
         flash(f'更新文件标签时出错: {str(e)}', 'error')
     
     return redirect(url_for('list_literature'))
+
+# 导入新的Collection_QA_Assistant
+from .agent.assistant import Collection_QA_Assistant, Collection_Ref_Assistant
+
+# 使用Session保存Agent实例
+if 'agents' not in app.config:
+    app.config['agents'] = {}
+
+@app.route('/agent_assistant')
+def agent_assistant():
+    """集合智能助手页面路由"""
+    
+    # 获取可用集合
+    collections = manager.database.list_collections()
+    collection_names = [col["name"] for col in collections if col.get("exists_in_chroma", False)]
+    
+    return render_template('agent_assistant.html', collections=collection_names)
+
+@app.route('/agent_assistant/chat', methods=['POST'])
+def agent_assistant_chat():
+    """处理集合智能助手的聊天请求"""
+    
+    # 获取请求数据
+    data = request.json
+    agent_id = data.get('agent_id')
+    query = data.get('query')
+    collection_name = data.get('collection_name')
+    model = data.get('model', 'gpt-4o')
+    top_k = int(data.get('top_k', 5))
+    debug_mode = data.get('debug_mode', False)
+    
+    if not query or not collection_name or not agent_id:
+        return jsonify({'error': '缺少必要参数'}), 400
+        
+    try:
+        # 检查是否已经存在此助手实例
+        if agent_id not in app.config['agents']:
+            # 创建新的Collection_QA_Assistant实例
+            agent = Collection_QA_Assistant(
+                model=model,
+                collection_name=collection_name,
+                top_k=top_k
+            )
+            app.config['agents'][agent_id] = agent
+            app.logger.info(f"创建了新的智能助手: {agent_id}, 集合: {collection_name}")
+        else:
+            # 使用现有助手实例
+            agent = app.config['agents'][agent_id]
+            
+        response = agent.run(query, debug=debug_mode)
+        logger.debug(response)
+        if debug_mode:
+            # Debug模式：返回所有消息步骤
+            # 处理消息列表并构建HTML
+            debug_content = ""
+            for idx, msg in enumerate(response):
+                role_badge = f'<span class="badge bg-primary">{msg.role}</span>'
+                step_badge = f'<span class="badge bg-secondary">步骤 {idx+1}</span>'
+                content = msg._content
+                debug_content += f'<div class="debug-message mb-2 p-2 border-bottom" style="color: inherit;">{role_badge} {step_badge}<br>{content}</div>'
+            
+            # 记录助手回复
+            assistant_message = {
+                "role": "assistant",
+                "content": f'<div class="debug-panel p-2 border rounded" style="color: inherit;"><h6>调试模式输出：</h6>{debug_content}</div>',
+                "timestamp": datetime.datetime.now()
+            }
+            
+            # 返回JSON响应
+            return jsonify({
+                'agent_id': agent_id,
+                'response': assistant_message["content"],
+                'collection_name': collection_name
+            })
+        else:
+            return jsonify({
+                'agent_id': agent_id,
+                'response': response,
+                'collection_name': collection_name,
+                'is_markdown': True  # 添加标记表示响应是Markdown格式
+            })
+            
+    except Exception as e:
+        app.logger.error(f"智能助手处理请求时出错: {str(e)}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': f'处理请求时出错: {str(e)}'}), 500
+
+@app.route('/agent_ref_assistant/process', methods=['POST'])
+def agent_ref_assistant_process():
+    """处理集合引用助手的参考文献请求"""
+    
+    # 获取请求数据
+    data = request.json
+    agent_id = data.get('agent_id')
+    statement = data.get('query')  # 使用相同的query字段接收陈述内容
+    collection_name = data.get('collection_name')
+    model = data.get('model', 'gpt-4o')
+    top_k = int(data.get('top_k', 5))
+    debug_mode = data.get('debug_mode', False)
+    
+    if not statement or not collection_name or not agent_id:
+        return jsonify({'error': '缺少必要参数'}), 400
+        
+    try:
+        # 检查是否已经存在此助手实例
+        if agent_id not in app.config['agents']:
+            # 创建新的Collection_Ref_Assistant实例
+            agent = Collection_Ref_Assistant(
+                model=model,
+                collection_name=collection_name,
+                top_k=top_k
+            )
+            app.config['agents'][agent_id] = agent
+            app.logger.info(f"创建了新的引用助手: {agent_id}, 集合: {collection_name}")
+        else:
+            # 使用现有助手实例
+            agent = app.config['agents'][agent_id]
+            
+        response = agent.run(statement, debug=debug_mode)
+        logger.debug(response)
+        
+        if debug_mode:
+            # Debug模式：返回所有消息步骤
+            # 处理消息列表并构建HTML
+            debug_content = ""
+            for idx, msg in enumerate(response):
+                role_badge = f'<span class="badge bg-primary">{msg.role}</span>'
+                step_badge = f'<span class="badge bg-secondary">步骤 {idx+1}</span>'
+                content = msg._content
+                debug_content += f'<div class="debug-message mb-2 p-2 border-bottom" style="color: inherit;">{role_badge} {step_badge}<br>{content}</div>'
+            
+            # 记录助手回复
+            assistant_message = {
+                "role": "assistant",
+                "content": f'<div class="debug-panel p-2 border rounded" style="color: inherit;"><h6>调试模式输出：</h6>{debug_content}</div>',
+                "timestamp": datetime.datetime.now()
+            }
+            
+            # 返回JSON响应
+            return jsonify({
+                'agent_id': agent_id,
+                'response': assistant_message["content"],
+                'collection_name': collection_name
+            })
+        else:
+            # 处理引用助手的返回结果
+            # Convert string response to dictionary if it's a string
+            if isinstance(response, str):
+                try:
+                    import json
+                    import ast
+                    
+                    # Try to parse the string as JSON first
+                    try:
+                        response = json.loads(response)
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails, try using ast.literal_eval
+                        try:
+                            response = ast.literal_eval(response)
+                        except (SyntaxError, ValueError):
+                            # If both methods fail, log the error and return an error response
+                            logger.error(f"Failed to parse response string to dictionary: {response}")
+                            return jsonify({'error': '无法解析助手返回的响应格式'}), 400
+                except Exception as e:
+                    logger.error(f"Error converting response string to dictionary: {str(e)}")
+                    return jsonify({'error': f'处理响应格式时出错: {str(e)}'}), 400
+
+            if isinstance(response, dict):
+                # 如果返回的是字典格式
+                main_text = response.get("main_text", "")
+                references_list = response.get("references_list", [])
+                
+                # 构建包含参考文献和链接的回答 - 以Markdown格式
+                if references_list:
+                    # 添加Markdown格式的参考文献部分
+                    markdown_text = main_text
+                    
+                    # 添加参考文献作为Markdown章节
+                    markdown_text += "\n\n## References\n\n"
+                    
+                    for i, ref in enumerate(references_list, 1):
+                        # 查找匹配的备份文件
+                        backup_files = find_backup_files_by_title(ref)
+                        if backup_files:
+                            # 创建Markdown链接格式
+                            markdown_text += f"{i}. [{ref}]({url_for('view_backup_files', filename=backup_files, _external=True)})\n"
+                        else:
+                            markdown_text += f"{i}. {ref}\n"
+                    
+                    # 返回JSON响应，包含完整的Markdown文本和is_markdown标志
+                    return jsonify({
+                        'agent_id': agent_id,
+                        'response': markdown_text,
+                        'collection_name': collection_name,
+                        'is_markdown': True
+                    })
+                else:
+                    # 如果没有参考文献，仍然以Markdown格式返回
+                    return jsonify({
+                        'agent_id': agent_id,
+                        'response': main_text,
+                        'collection_name': collection_name,
+                        'is_markdown': True
+                    })
+            else:
+                # 如果返回的不是字典格式，直接报错
+                logger.debug("The response with wrong format:")
+                logger.debug(type(response))
+                logger.debug(response)
+                error_message = f"无效的响应格式：引用助手应返回包含main_text和references_list的字典"
+                app.logger.error(error_message)
+                return jsonify({'error': error_message}), 400
+            
+    except Exception as e:
+        app.logger.error(f"引用助手处理请求时出错: {str(e)}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': f'处理引用请求时出错: {str(e)}'}), 500
 
 if __name__ == '__main__':
     run_app(debug=True) 

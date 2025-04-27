@@ -1,0 +1,964 @@
+{% extends 'base.html' %}
+
+{% block title %}Amphilagus - 集合智能助手{% endblock %}
+
+{% block header %}集合智能助手{% endblock %}
+{% block subheader %}与多个文档集合进行智能对话与引用{% endblock %}
+
+{% block head_extra %}
+<style>
+    .agents-container {
+        display: flex;
+        flex-direction: column;
+        height: 80vh;
+        position: relative;
+    }
+    
+    .agents-tabs {
+        display: flex;
+        overflow-x: auto;
+        margin-bottom: 10px;
+    }
+    
+    .agent-tab {
+        padding: 8px 15px;
+        margin-right: 5px;
+        border-radius: 5px 5px 0 0;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    
+    .agent-tab.active {
+        font-weight: bold;
+    }
+    
+    .agent-tab-close {
+        margin-left: 8px;
+        font-size: 14px;
+    }
+    
+    .chat-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        border-radius: 5px;
+        overflow: hidden; /* Prevent overflow outside chat area */
+    }
+    
+    .chat-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+        margin-bottom: 0; /* Remove bottom margin since input is fixed */
+        height: calc(80vh - 120px); /* Subtract height of input area + padding */
+    }
+    
+    .message {
+        margin-bottom: 15px;
+        padding: 10px 15px;
+        border-radius: 10px;
+        max-width: 300%;
+    }
+    
+    .user-message {
+        margin-left: auto;
+        text-align: left;
+        word-wrap: break-word;
+        max-width: 80%;
+    }
+    
+    .assistant-message {
+        margin-right: auto;
+        word-wrap: break-word;
+        max-width: 80%;
+    }
+    
+    .message-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 10px;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+    
+    .message-content {
+        flex: 1;
+        min-width: 0; /* Ensures the flex item can shrink below its content size */
+        overflow-wrap: break-word; /* Ensures words break to prevent overflow */
+    }
+    
+    .message-container {
+        display: flex;
+        align-items: flex-start;
+        width: 100%;
+    }
+    
+    .user-message-container {
+        display: flex;
+        flex-direction: row-reverse;
+        align-items: flex-start;
+        width: 100%;
+    }
+    
+    .user-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 10px;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+    
+    .message-wrapper {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 20px;
+        width: 100%;
+    }
+    
+    .assistant-wrapper {
+        align-items: flex-start;
+    }
+    
+    .user-wrapper {
+        align-items: flex-end;
+    }
+    
+    .message-time {
+        font-size: 0.7em;
+        margin-top: 2px;
+    }
+    
+    .input-container {
+        display: flex;
+        padding: 15px;
+        background-color: inherit;
+        border-top: 1px solid rgba(0,0,0,0.1);
+        position: sticky;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 10;
+    }
+    
+    .input-container textarea {
+        flex: 1;
+        resize: none;
+        padding: 10px;
+        border-radius: 5px;
+    }
+    
+    .send-button {
+        margin-left: 10px;
+    }
+    
+    .agent-collection-badge {
+        font-size: 0.75em;
+        padding: 3px 6px;
+        border-radius: 10px;
+        margin-left: 8px;
+    }
+    
+    .hidden {
+        display: none;
+    }
+    
+    /* 占位提示 */
+    .placeholder-message {
+        text-align: center;
+        padding: 40px 20px;
+    }
+    
+    /* 调试面板样式 */
+    .debug-panel {
+        background-color: rgba(0, 0, 0, 0.03);
+        border-radius: 5px;
+        font-family: monospace;
+        font-size: 0.9rem;
+    }
+    
+    .debug-title {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-bottom: 8px;
+        font-weight: bold;
+    }
+    
+    .debug-content {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .debug-step {
+        padding: 5px;
+        border-left: 3px solid #6c757d;
+        background-color: rgba(0, 0, 0, 0.02);
+    }
+    
+    .debug-json {
+        font-size: 0.8rem;
+        white-space: pre-wrap;
+        margin: 0;
+        color: #333;
+    }
+    
+    .debug-message {
+        white-space: pre-wrap;
+        color: #333;
+    }
+
+    /* 助手类型选择样式 */
+    .assistant-type-selector {
+        margin-bottom: 15px;
+    }
+    
+    .assistant-type-selector .form-check {
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+    }
+    
+    .assistant-type-selector .form-check:hover {
+        background-color: rgba(0,0,0,0.03);
+    }
+    
+    .assistant-type-selector .form-check-input:checked + .form-check-label {
+        font-weight: bold;
+    }
+    
+    .assistant-type-description {
+        font-size: 0.9em;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+
+    /* Markdown 样式 */
+    .assistant-message pre {
+        background-color: rgba(0, 0, 0, 0.04);
+        border-radius: 4px;
+        padding: 10px;
+        overflow-x: auto;
+    }
+
+    .assistant-message code {
+        background-color: rgba(0, 0, 0, 0.04);
+        border-radius: 3px;
+        padding: 2px 4px;
+        font-family: Consolas, Monaco, 'Andale Mono', monospace;
+    }
+
+    .assistant-message blockquote {
+        border-left: 4px solid #ddd;
+        padding-left: 10px;
+        margin-left: 20px;
+        color: #666;
+    }
+
+    .assistant-message table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+
+    .assistant-message table th,
+    .assistant-message table td {
+        padding: 8px;
+        border: 1px solid #ddd;
+    }
+
+    .assistant-message table th {
+        background-color: rgba(0, 0, 0, 0.04);
+        font-weight: bold;
+    }
+</style>
+<!-- 预先加载 Marked.js 库 -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="row mt-2">
+    <div class="col-md-3 mb-3">
+        <!-- 创建新智能助手面板 -->
+        <div class="card">
+            <div class="card-header py-2">
+                <i class="fas fa-robot me-2"></i>创建智能助手
+            </div>
+            <div class="card-body">
+                <form id="createAgentForm">
+                    <!-- 助手类型选择 -->
+                    <div class="mb-3 assistant-type-selector">
+                        <label class="form-label">助手类型</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="assistantType" id="typeQA" value="qa" checked>
+                            <label class="form-check-label" for="typeQA">
+                                <i class="fas fa-robot me-1"></i> 问答助手
+                            </label>
+                            <div class="assistant-type-description">
+                                与文档集合进行智能对话，获取精准回答
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="assistantType" id="typeRef" value="reference">
+                            <label class="form-check-label" for="typeRef">
+                                <i class="fas fa-quote-right me-1"></i> 引用助手
+                            </label>
+                            <div class="assistant-type-description">
+                                为学术陈述自动添加相关文献引用
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 集合选择 -->
+                    <div class="mb-3">
+                        <label for="collectionSelect" class="form-label">知识库集合</label>
+                        <select class="form-select" id="collectionSelect" name="collection_name" required>
+                            <option value="" selected disabled>选择集合</option>
+                            {% for collection in collections %}
+                                <option value="{{ collection }}">{{ collection }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">选择包含文档的集合</div>
+                    </div>
+
+                    <!-- 模型选择 -->
+                    <div class="mb-3">
+                        <label for="agentModel" class="form-label">模型</label>
+                        <select class="form-select" id="agentModel">
+                            <option value="gpt-4.1-2025-04-14" selected>GPT-4.1 (先进)</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini (快速)</option>
+                            <option value="gpt-4o">GPT-4o (经典)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="agentDebugMode">
+                        <label class="form-check-label" for="agentDebugMode">调试模式</label>
+                    </div>
+                    
+                    <!-- 结果数量 -->
+                    <div class="mb-3">
+                        <label for="topKInput" class="form-label">结果数量 (top_k)</label>
+                        <input type="number" class="form-control" id="topKInput" name="top_k" value="21" min="1" max="100">
+                        <div class="form-text">每次查询返回的最大文档数量</div>
+                    </div>
+
+                    <!-- 助手名称 -->
+                    <div class="mb-3">
+                        <label for="agentNameInput" class="form-label">助手名称 (可选)</label>
+                        <input type="text" class="form-control" id="agentNameInput" name="agent_name" placeholder="自动基于集合命名">
+                    </div>
+
+                    <!-- 创建按钮 -->
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary" id="createAgentBtn">
+                            <i class="fas fa-plus me-2"></i>创建助手
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- 助手信息面板 -->
+        <div class="card mt-3">
+            <div class="card-header py-2">
+                <i class="fas fa-info-circle me-2"></i>当前助手
+            </div>
+            <div class="card-body p-0">
+                <div class="current-agent-info p-3 text-center" id="currentAgentInfo">
+                    <div class="placeholder-message text-muted">
+                        <i class="fas fa-robot fa-2x mb-2"></i>
+                        <p>请创建或选择一个智能助手</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <!-- 智能助手对话界面 -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <div>
+                    <i class="fas fa-comments me-2"></i>智能助手对话
+                </div>
+                <div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="clearChatBtn">
+                        <i class="fas fa-trash-alt"></i> 清空当前对话
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <!-- 助手选项卡 -->
+                <div class="agents-tabs" id="agentTabs"></div>
+                
+                <!-- 助手界面 -->
+                <div class="agents-container">
+                    <div class="chat-area" id="chatArea">
+                        <div class="placeholder-message text-muted" id="noAgentPlaceholder">
+                            <i class="fas fa-robot fa-3x mb-3"></i>
+                            <p>请创建一个新智能助手开始对话</p>
+                            <p class="small">使用左侧面板创建基于不同文档集合的智能助手</p>
+                        </div>
+                    </div>
+                    
+                    <!-- 输入区域 -->
+                    <div class="input-container" id="chatInputContainer">
+                        <textarea 
+                            class="form-control" 
+                            id="userInput" 
+                            placeholder="输入您的问题..." 
+                            rows="2"
+                            disabled
+                        ></textarea>
+                        <button class="btn btn-primary send-button" type="button" id="sendMessageBtn" disabled>
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript 代码 -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 全局变量
+        const agents = {};  // 保存助手信息的对象
+        let activeAgentId = null;  // 当前活动助手ID
+        
+        // 定义toggleDebugInfo函数在全局作用域
+        window.toggleDebugInfo = function(debugId) {
+            const debugElement = document.getElementById(debugId);
+            if (debugElement) {
+                if (debugElement.style.display === 'none') {
+                    debugElement.style.display = 'block';
+                } else {
+                    debugElement.style.display = 'none';
+                }
+            }
+        };
+
+        // DOM 元素
+        const agentTabs = document.getElementById('agentTabs');
+        const chatArea = document.getElementById('chatArea');
+        const createAgentForm = document.getElementById('createAgentForm');
+        const userInput = document.getElementById('userInput');
+        const sendMessageBtn = document.getElementById('sendMessageBtn');
+        const clearChatBtn = document.getElementById('clearChatBtn');
+        const noAgentPlaceholder = document.getElementById('noAgentPlaceholder');
+        const currentAgentInfo = document.getElementById('currentAgentInfo');
+        const assistantTypeRadios = document.getElementsByName('assistantType');
+        
+        // 助手类型切换处理
+        function updatePlaceholder() {
+            const selectedType = document.querySelector('input[name="assistantType"]:checked').value;
+            if (selectedType === 'reference') {
+                userInput.placeholder = "输入您的学术陈述，系统将为其添加引用...";
+            } else {
+                userInput.placeholder = "输入您的问题...";
+            }
+        }
+        
+        // 监听助手类型切换
+        assistantTypeRadios.forEach(radio => {
+            radio.addEventListener('change', updatePlaceholder);
+        });
+        
+        // 创建新助手
+        createAgentForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // 获取表单数据
+            const formData = new FormData(createAgentForm);
+            const collectionName = formData.get('collection_name');
+            const model = document.getElementById('agentModel').value;
+            const topK = formData.get('top_k');
+            let agentName = formData.get('agent_name');
+            const debugMode = document.getElementById('agentDebugMode').checked;
+            const assistantType = document.querySelector('input[name="assistantType"]:checked').value;
+            
+            // 如果未提供名称，使用集合名称
+            if (!agentName || agentName.trim() === '') {
+                agentName = collectionName;
+            }
+            
+            // 生成唯一ID
+            const agentId = 'agent_' + Date.now();
+            
+            // 创建新助手
+            createAgent(agentId, agentName, collectionName, model, topK, debugMode, assistantType);
+            
+            // 重置表单
+            // 不重置助手类型选择
+            document.getElementById('collectionSelect').value = '';
+            document.getElementById('agentNameInput').value = '';
+            document.getElementById('agentDebugMode').checked = false;
+            
+            // 提示用户
+            showToast('智能助手创建成功', 'success');
+        });
+        
+        // 发送消息
+        sendMessageBtn.addEventListener('click', sendMessage);
+        
+        // 按Enter键发送消息
+        userInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // 清空当前对话
+        clearChatBtn.addEventListener('click', function() {
+            if (activeAgentId && confirm('确定要清空当前对话吗？')) {
+                const chatContainer = document.getElementById(`chat_${activeAgentId}`);
+                if (chatContainer) {
+                    // 保留欢迎消息
+                    const welcomeMsg = chatContainer.querySelector('.welcome-message');
+                    chatContainer.innerHTML = '';
+                    if (welcomeMsg) {
+                        chatContainer.appendChild(welcomeMsg);
+                    }
+                    
+                    // 清空消息历史
+                    agents[activeAgentId].messages = [];
+                    
+                    showToast('对话已清空', 'success');
+                }
+            }
+        });
+        
+        // 滚动到底部
+        function scrollToBottom(container) {
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+        
+        // 创建新智能助手
+        function createAgent(agentId, agentName, collectionName, model, topK, debugMode, assistantType) {
+            // 存储助手信息
+            agents[agentId] = {
+                id: agentId,
+                name: agentName,
+                collection: collectionName,
+                model: model,
+                topK: topK,
+                messages: [],
+                debugMode: debugMode,
+                assistantType: assistantType
+            };
+            
+            // 创建标签
+            const tab = document.createElement('div');
+            tab.className = 'agent-tab';
+            tab.id = `tab_${agentId}`;
+            tab.innerHTML = `
+                ${agentName}
+                <span class="agent-collection-badge">${collectionName}</span>
+                <span class="agent-tab-close" data-agent-id="${agentId}">×</span>
+            `;
+            agentTabs.appendChild(tab);
+            
+            // 标签点击事件
+            tab.addEventListener('click', function(e) {
+                // 忽略关闭按钮的点击
+                if (e.target.classList.contains('agent-tab-close')) {
+                    return;
+                }
+                activateAgent(agentId);
+            });
+            
+            // 关闭标签事件
+            tab.querySelector('.agent-tab-close').addEventListener('click', function() {
+                removeAgent(agentId);
+            });
+            
+            // 创建聊天容器
+            const chatContainer = document.createElement('div');
+            chatContainer.className = 'chat-container hidden';
+            chatContainer.id = `chat_${agentId}`;
+            
+            // 添加欢迎消息
+            const welcomeMessage = document.createElement('div');
+            welcomeMessage.className = 'message-wrapper assistant-wrapper welcome-message';
+            
+            // 根据助手类型设置不同的欢迎信息
+            let welcomeText = "";
+            if (assistantType === 'reference') {
+                welcomeText = `我是基于 ${collectionName} 集合的引用助手，可以为学术陈述添加相关文献引用。`;
+            } else {
+                welcomeText = `我是基于 ${collectionName} 集合的智能助手，有什么可以帮您的吗？`;
+            }
+            
+            welcomeMessage.innerHTML = `
+                <div class="message-container">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content assistant-message">
+                        <div>${welcomeText}</div>
+                    </div>
+                </div>
+                <div class="message-time">${getCurrentTime()}</div>
+            `;
+            chatContainer.appendChild(welcomeMessage);
+            chatArea.appendChild(chatContainer);
+            
+            // 激活新创建的助手
+            activateAgent(agentId);
+            
+            // 启用输入框
+            userInput.disabled = false;
+            sendMessageBtn.disabled = false;
+            
+            // 隐藏占位消息
+            noAgentPlaceholder.classList.add('hidden');
+            
+            // 滚动到底部
+            scrollToBottom(chatContainer);
+        }
+        
+        // 激活助手
+        function activateAgent(agentId) {
+            // 如果已有活动助手，先停用
+            if (activeAgentId) {
+                document.getElementById(`tab_${activeAgentId}`).classList.remove('active');
+                document.getElementById(`chat_${activeAgentId}`).classList.add('hidden');
+            }
+            
+            // 激活新助手
+            activeAgentId = agentId;
+            document.getElementById(`tab_${agentId}`).classList.add('active');
+            document.getElementById(`chat_${agentId}`).classList.remove('hidden');
+            
+            // 更新当前助手信息
+            updateAgentInfo(agentId);
+            
+            // 根据助手类型更新输入框提示
+            const agent = agents[agentId];
+            if (agent.assistantType === 'reference') {
+                userInput.placeholder = "输入您的学术陈述，系统将为其添加引用...";
+            } else {
+                userInput.placeholder = "输入您的问题...";
+            }
+            
+            // 聚焦输入框
+            userInput.focus();
+        }
+        
+        // 更新助手信息面板
+        function updateAgentInfo(agentId) {
+            const agent = agents[agentId];
+            if (!agent) return;
+            
+            // 显示助手类型标志
+            const typeLabel = agent.assistantType === 'reference' ? 
+                '<span class="badge bg-info">引用助手</span>' : 
+                '<span class="badge bg-primary">问答助手</span>';
+            
+            currentAgentInfo.innerHTML = `
+                <h5>${agent.name} ${typeLabel}</h5>
+                <div class="mb-2">
+                    <span class="badge bg-primary">集合: ${agent.collection}</span>
+                </div>
+                <div class="mb-2">
+                    <span class="badge bg-secondary">模型: ${agent.model}</span>
+                </div>
+                <div class="mb-2">
+                    <span class="badge bg-info">结果数量: ${agent.topK}</span>
+                </div>
+                ${agent.debugMode ? '<div><span class="badge bg-warning">调试模式: 已启用</span></div>' : ''}
+            `;
+        }
+        
+        // 移除助手
+        function removeAgent(agentId) {
+            if (!confirm('确定要关闭这个智能助手吗？')) {
+                return;
+            }
+            
+            // 移除标签和聊天容器
+            document.getElementById(`tab_${agentId}`).remove();
+            document.getElementById(`chat_${agentId}`).remove();
+            
+            // 从存储中移除
+            delete agents[agentId];
+            
+            // 如果移除的是当前活动助手
+            if (agentId === activeAgentId) {
+                // 找到下一个可用的助手
+                const remainingIds = Object.keys(agents);
+                if (remainingIds.length > 0) {
+                    activateAgent(remainingIds[0]);
+                } else {
+                    // 没有剩余助手
+                    activeAgentId = null;
+                    userInput.disabled = true;
+                    sendMessageBtn.disabled = true;
+                    noAgentPlaceholder.classList.remove('hidden');
+                    currentAgentInfo.innerHTML = `
+                        <div class="placeholder-message text-muted">
+                            <i class="fas fa-robot fa-2x mb-2"></i>
+                            <p>请创建或选择一个智能助手</p>
+                        </div>
+                    `;
+                }
+            }
+        }
+        
+        // 发送消息
+        function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text || !activeAgentId) return;
+            
+            const agent = agents[activeAgentId];
+            const chatContainer = document.getElementById(`chat_${activeAgentId}`);
+            
+            // 添加用户消息到UI
+            const userMessageElem = document.createElement('div');
+            userMessageElem.className = 'message-wrapper user-wrapper';
+            userMessageElem.innerHTML = `
+                <div class="user-message-container">
+                    <div class="user-avatar">👤</div>
+                    <div class="message-content user-message">
+                        ${text}
+                    </div>
+                </div>
+                <div class="message-time">${getCurrentTime()}</div>
+            `;
+            chatContainer.appendChild(userMessageElem);
+            
+            // 处理消息
+            processMessage(text, agent.collection, agent.model, agent.topK, agent.debugMode, agent.assistantType);
+            
+            // 滚动到底部
+            scrollToBottom(chatContainer);
+        }
+        
+        // 获取当前时间
+        function getCurrentTime() {
+            return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        // 显示提示消息
+        function showToast(message, type = 'info') {
+            // 检查是否已存在toast容器
+            let toastContainer = document.getElementById('toastContainer');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.id = 'toastContainer';
+                toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+                document.body.appendChild(toastContainer);
+            }
+            
+            // 创建toast元素
+            const toastId = 'toast-' + Date.now();
+            const toast = document.createElement('div');
+            toast.className = `toast align-items-center text-white bg-${type} border-0`;
+            toast.id = toastId;
+            toast.innerHTML = `
+                <div class="d-flex">
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                </div>
+            `;
+            
+            toastContainer.appendChild(toast);
+            
+            // 初始化并显示toast
+            const toastObj = new bootstrap.Toast(toast, {
+                autohide: true,
+                delay: 3000
+            });
+            toastObj.show();
+            
+            // 监听关闭事件，移除DOM元素
+            toast.addEventListener('hidden.bs.toast', function () {
+                toast.remove();
+            });
+        }
+        
+        // 处理消息函数
+        function processMessage(text, collectionName, model, topK, debugMode, assistantType) {
+            // 清空输入框
+            userInput.value = '';
+            
+            // 获取聊天容器
+            const chatContainer = document.getElementById(`chat_${activeAgentId}`);
+            
+            // 添加思考中提示
+            const thinkingElem = document.createElement('div');
+            thinkingElem.id = 'thinking-message';
+            thinkingElem.className = 'message-wrapper assistant-wrapper';
+            thinkingElem.innerHTML = `
+                <div class="message-container">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content assistant-message">
+                        <div class="thinking"><i class="fas fa-spinner fa-spin me-2"></i>思考中...</div>
+                    </div>
+                </div>
+                <div class="message-time">${getCurrentTime()}</div>
+            `;
+            chatContainer.appendChild(thinkingElem);
+            scrollToBottom(chatContainer);
+            
+            // 根据助手类型选择API端点
+            const apiEndpoint = assistantType === 'reference' ? 
+                '/agent_ref_assistant/process' : 
+                '/agent_assistant/chat';
+            
+            // 发送到后端
+            fetch(apiEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    agent_id: activeAgentId,
+                    query: text,
+                    collection_name: collectionName,
+                    model: model,
+                    top_k: topK,
+                    debug_mode: debugMode === true // 确保传递布尔值而不是其他类型
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 移除思考中提示
+                document.getElementById('thinking-message').remove();
+                
+                // 处理返回结果
+                if (data.error) {
+                    // 显示错误
+                    const errorElem = document.createElement('div');
+                    errorElem.className = 'message-wrapper assistant-wrapper';
+                    errorElem.innerHTML = `
+                        <div class="message-container">
+                            <div class="message-avatar">🤖</div>
+                            <div class="message-content assistant-message">
+                                <div class="text-danger">错误: ${data.error}</div>
+                            </div>
+                        </div>
+                        <div class="message-time">${getCurrentTime()}</div>
+                    `;
+                    chatContainer.appendChild(errorElem);
+                } else {
+                    // 显示回复
+                    const response = data.response;
+                    let responseHTML = '';
+                    
+                    // 无论是否为调试模式，都使用相同的逻辑处理回复
+                    if (typeof response === 'object') {
+                        // 如果返回的是对象，显示response字段
+                        responseHTML = response.response || JSON.stringify(response);
+                    } else {
+                        // 如果返回的是字符串，直接显示
+                        responseHTML = response;
+                    }
+                    
+                    // 添加回复到UI
+                    const replyElem = document.createElement('div');
+                    replyElem.className = 'message-wrapper assistant-wrapper';
+                    
+                    // 如果响应是Markdown格式，使用marked.js渲染
+                    if (data.is_markdown) {
+                        replyElem.innerHTML = `
+                            <div class="message-container">
+                                <div class="message-avatar">🤖</div>
+                                <div class="message-content assistant-message">
+                                    <div id="markdown-content-${Date.now()}"></div>
+                                </div>
+                            </div>
+                            <div class="message-time">${getCurrentTime()}</div>
+                        `;
+                        chatContainer.appendChild(replyElem);
+                        
+                        // 动态加载marked.js库（如果尚未加载）
+                        if (typeof marked === 'undefined') {
+                            const script = document.createElement('script');
+                            script.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+                            script.onload = () => {
+                                // 库加载完成后渲染Markdown
+                                const markdownContainer = replyElem.querySelector('[id^="markdown-content-"]');
+                                if (markdownContainer) {
+                                    markdownContainer.innerHTML = marked.parse(responseHTML);
+                                }
+                            };
+                            document.head.appendChild(script);
+                        } else {
+                            // 库已加载，直接渲染
+                            const markdownContainer = replyElem.querySelector('[id^="markdown-content-"]');
+                            if (markdownContainer) {
+                                markdownContainer.innerHTML = marked.parse(responseHTML);
+                            }
+                        }
+                    } else {
+                        // 常规HTML内容
+                        replyElem.innerHTML = `
+                            <div class="message-container">
+                                <div class="message-avatar">🤖</div>
+                                <div class="message-content assistant-message">
+                                    <div>${responseHTML}</div>
+                                </div>
+                            </div>
+                            <div class="message-time">${getCurrentTime()}</div>
+                        `;
+                        chatContainer.appendChild(replyElem);
+                    }
+                }
+                
+                // 记录消息到历史
+                if (activeAgentId && agents[activeAgentId]) {
+                    agents[activeAgentId].messages.push({
+                        role: 'user',
+                        content: text,
+                        timestamp: new Date()
+                    });
+                    
+                    agents[activeAgentId].messages.push({
+                        role: 'assistant',
+                        content: data.response || data.error,
+                        timestamp: new Date()
+                    });
+                }
+                
+                // 滚动到底部
+                scrollToBottom(chatContainer);
+            })
+            .catch(error => {
+                // 移除思考中提示
+                const thinkingMsg = document.getElementById('thinking-message');
+                if (thinkingMsg) thinkingMsg.remove();
+                
+                // 显示错误
+                const errorElem = document.createElement('div');
+                errorElem.className = 'message-wrapper assistant-wrapper';
+                errorElem.innerHTML = `
+                    <div class="message-container">
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content assistant-message">
+                            <div class="text-danger">系统错误: ${error.message}</div>
+                        </div>
+                    </div>
+                    <div class="message-time">${getCurrentTime()}</div>
+                `;
+                chatContainer.appendChild(errorElem);
+                scrollToBottom(chatContainer);
+                console.error('Error:', error);
+            });
+        }
+    });
+</script>
+{% endblock %}

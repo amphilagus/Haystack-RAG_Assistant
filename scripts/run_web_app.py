@@ -43,11 +43,8 @@ if __name__ == "__main__":
         os.environ['LOG_LEVEL'] = args.log_level
     print(f"日志级别: {os.environ['LOG_LEVEL']}")
 
-    from amphilagus.web_app import app, ensure_base_tags
+    from amphilagus.web_app import app
 
-    # 确保基础标签存在
-    ensure_base_tags()
-    
     # Add current year for footer copyright
     @app.context_processor
     def inject_now():

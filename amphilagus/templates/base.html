@@ -10,95 +10,311 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* Sidebar styles */
+        body {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        #sidebar {
+            width: 240px;
+            min-height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            background: var(--header-bg);
+            z-index: 1000;
+            transition: all 0.3s;
+            padding-top: 1rem;
+        }
+        
+        /* 侧边栏隐藏状态 */
+        body.sidebar-hidden #sidebar {
+            margin-left: -240px;
+        }
+        
+        body.sidebar-hidden #content-wrapper {
+            margin-left: 0;
+        }
+        
+        /* 侧边栏切换按钮 */
+        #sidebarToggle {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1100;
+            background: var(--card-bg);
+            color: var(--fg-color);
+            border: 1px solid var(--border-color);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        /* 当侧边栏隐藏时，切换按钮位置 */
+        body.sidebar-hidden #sidebarToggle {
+            left: 15px;
+        }
+        
+        /* 当侧边栏可见时，切换按钮位置 */
+        body:not(.sidebar-hidden) #sidebarToggle {
+            left: 255px;
+        }
+        
+        #sidebar .navbar-brand {
+            padding-left: 1.25rem;
+            padding-right: 1.25rem;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            display: block;
+        }
+        
+        #sidebar .nav-item {
+            width: 100%;
+        }
+        
+        #sidebar .nav-link {
+            color: var(--fg-color);
+            padding: 0.75rem 1.25rem;
+            position: relative;
+            transition: all 0.3s;
+            border-radius: 0;
+        }
+        
+        #sidebar .nav-link:hover, 
+        #sidebar .nav-link.active {
+            background: var(--surface-hover);
+            color: var(--accent-color) !important;
+        }
+        
+        #sidebar .nav-link.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            background: var(--accent-color);
+        }
+        
+        #sidebar .nav-link i {
+            width: 20px;
+            text-align: center;
+            margin-right: 10px;
+        }
+        
+        #content-wrapper {
+            width: 100%;
+            margin-left: 240px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s;
+        }
+        
+        #content {
+            flex: 1;
+            padding: 2rem 1rem;
+        }
+        
+        /* 增加页面内容宽度 */
+        #content .container {
+            max-width: 2000px; /* 增加默认容器宽度 */
+            width: 95%; /* 使用百分比宽度以适应不同屏幕 */
+        }
+        
+        .footer {
+            margin-top: auto !important;
+        }
+        
+        /* Mobile sidebar toggle */
+        #sidebarCollapse {
+            display: none;
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1100;
+            background: var(--card-bg);
+            color: var(--fg-color);
+            border: 1px solid var(--border-color);
+        }
+        
+        /* Mobile responsiveness */
+        @media (max-width: 991.98px) {
+            #sidebar {
+                margin-left: -240px;
+            }
+            
+            #sidebar.active {
+                margin-left: 0;
+            }
+            
+            #content-wrapper {
+                margin-left: 0;
+            }
+            
+            #content-wrapper.active {
+                margin-left: 240px;
+            }
+            
+            #sidebarCollapse {
+                display: block;
+            }
+            
+            /* 移动端时隐藏固定切换按钮，使用专用移动端按钮 */
+            #sidebarToggle {
+                display: none;
+            }
+        }
+    </style>
     {% block head_extra %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('base.index') }}">
-                Amphilagus
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('base.index') }}">
-                            <i class="fas fa-home me-1"></i>首页
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/files' or request.path.startswith('/files/') %}active{% endif %}" href="{{ url_for('files.list_files') }}">
-                            <i class="fas fa-file me-1"></i>文件
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/literature' or request.path.startswith('/literature/') %}active{% endif %}" href="{{ url_for('literature.list_literature') }}">
-                            <i class="fas fa-book me-1"></i>文献
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/tags' %}active{% endif %}" href="{{ url_for('tags.list_tags') }}">
-                            <i class="fas fa-tags me-1"></i>标签
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/database' %}active{% endif %}" href="{{ url_for('database.database_dashboard') }}">
-                            <i class="fas fa-database me-1"></i>数据库
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/tasks' %}active{% endif %}" href="{{ url_for('tasks.view_tasks') }}">
-                            <i class="fas fa-tasks me-1"></i>任务管理
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/agent_assistant' %}active{% endif %}" href="{{ url_for('agent.agent_assistant') }}">
-                            <i class="fas fa-robot me-1"></i>智能助手
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('base.reload_config') }}" title="重新加载配置文件">
-                            <i class="fas fa-sync-alt me-1"></i>刷新配置
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
+    <!-- Sidebar Toggle Button (mobile only) -->
+    <button type="button" id="sidebarCollapse" class="btn btn-sm">
+        <i class="fas fa-bars"></i>
+    </button>
+    
+    <!-- Sidebar Toggle Button (always visible on desktop) -->
+    <button type="button" id="sidebarToggle" class="btn">
+        <i class="fas fa-chevron-left"></i>
+    </button>
+
+    <!-- Sidebar -->
+    <nav id="sidebar">
+        <a class="navbar-brand" href="{{ url_for('base.index') }}">
+            Amphilagus
+        </a>
+        <ul class="navbar-nav">
+            <li class="nav-item">
+                <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('base.index') }}">
+                    <i class="fas fa-home"></i>首页
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.path == '/files' or request.path.startswith('/files/') %}active{% endif %}" href="{{ url_for('files.list_files') }}">
+                    <i class="fas fa-file"></i>文件
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.path == '/literature' or request.path.startswith('/literature/') %}active{% endif %}" href="{{ url_for('literature.list_literature') }}">
+                    <i class="fas fa-book"></i>文献
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.path == '/tags' %}active{% endif %}" href="{{ url_for('tags.list_tags') }}">
+                    <i class="fas fa-tags"></i>标签
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.path == '/database' %}active{% endif %}" href="{{ url_for('database.database_dashboard') }}">
+                    <i class="fas fa-database"></i>数据库
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.path == '/tasks' %}active{% endif %}" href="{{ url_for('tasks.view_tasks') }}">
+                    <i class="fas fa-tasks"></i>任务管理
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.path == '/agent_assistant' %}active{% endif %}" href="{{ url_for('agent.agent_assistant') }}">
+                    <i class="fas fa-robot"></i>智能助手
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('base.reload_config') }}" title="重新加载配置文件">
+                    <i class="fas fa-sync-alt"></i>刷新配置
+                </a>
+            </li>
+        </ul>
     </nav>
 
-    <div class="container">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+    <!-- Page Content -->
+    <div id="content-wrapper">
+        <div id="content">
+            <div class="container">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
 
-        <div class="mb-2">
-            <h1 class="fs-3 mb-1">{% block header %}Amphilagus{% endblock %}</h1>
-            <p class="text-secondary small mb-2">{% block subheader %}文件标签化管理系统{% endblock %}</p>
-            <hr class="mt-2 mb-3">
+                <div class="mb-2">
+                    <h1 class="fs-3 mb-1">{% block header %}Amphilagus{% endblock %}</h1>
+                    <p class="text-secondary small mb-2">{% block subheader %}文件标签化管理系统{% endblock %}</p>
+                    <hr class="mt-2 mb-3">
+                </div>
+
+                {% block content %}{% endblock %}
+            </div>
         </div>
 
-        {% block content %}{% endblock %}
+        <footer class="footer mt-5 py-3 bg-light">
+            <div class="container text-center">
+                <span class="text-muted">Amphilagus RAG Assistant 文件管理系统 &copy; {{ now.year }}</span>
+            </div>
+        </footer>
     </div>
-
-    <footer class="footer mt-5 py-3 bg-light">
-        <div class="container text-center">
-            <span class="text-muted">Amphilagus RAG Assistant 文件管理系统 &copy; {{ now.year }}</span>
-        </div>
-    </footer>
 
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <!-- jQuery for additional functionality -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // 加载保存的侧边栏状态
+            const sidebarState = localStorage.getItem('sidebarState');
+            if (sidebarState === 'hidden') {
+                $('body').addClass('sidebar-hidden');
+                $('#sidebarToggle i').removeClass('fa-chevron-left').addClass('fa-chevron-right');
+            }
+            
+            // 侧边栏显示/隐藏切换
+            $('#sidebarToggle').on('click', function() {
+                $('body').toggleClass('sidebar-hidden');
+                
+                // 切换图标
+                if ($('body').hasClass('sidebar-hidden')) {
+                    $(this).find('i').removeClass('fa-chevron-left').addClass('fa-chevron-right');
+                    localStorage.setItem('sidebarState', 'hidden');
+                } else {
+                    $(this).find('i').removeClass('fa-chevron-right').addClass('fa-chevron-left');
+                    localStorage.setItem('sidebarState', 'visible');
+                }
+            });
+            
+            // Toggle sidebar on mobile
+            $('#sidebarCollapse').on('click', function() {
+                $('#sidebar').toggleClass('active');
+                $('#content-wrapper').toggleClass('active');
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            $(document).on('click', function(e) {
+                const $sidebar = $('#sidebar');
+                const $toggle = $('#sidebarCollapse');
+                
+                // If sidebar is open on mobile AND click is outside sidebar AND not on toggle button
+                if ($sidebar.hasClass('active') && 
+                    !$(e.target).closest('#sidebar').length && 
+                    !$(e.target).closest('#sidebarCollapse').length) {
+                    $sidebar.removeClass('active');
+                    $('#content-wrapper').removeClass('active');
+                }
+            });
+        });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html> 

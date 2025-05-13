@@ -9,11 +9,20 @@
         display: none;
     }
     
-    body {
+    /* 调整内容区域 */
+    #content, #content-wrapper {
+        padding: 0 !important;
+        margin: 0 !important;
         overflow: hidden;
-        background-color: #000;
-        margin: 0;
-        padding: 0;
+    }
+    
+    /* 内容区撑满可用空间 */
+    #content .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        height: 100vh;
+        position: relative;
     }
     
     /* 隐藏页脚 */
@@ -22,17 +31,18 @@
     }
     
     .full-container {
-        position: fixed;
+        position: absolute;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        z-index: -1;
+        z-index: 1;
     }
     
     #animation-canvas {
         width: 100%;
         height: 100%;
+        display: block;
     }
     
     .content-overlay {
@@ -168,15 +178,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ===== 基础场景 & 渲染器 ===== */
   const scene   = new THREE.Scene();
-  const camera  = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+  const canvas = document.getElementById("animation-canvas");
+  const canvasContainer = document.querySelector(".full-container");
+  const containerWidth = canvasContainer.clientWidth;
+  const containerHeight = canvasContainer.clientHeight;
+  
+  const camera  = new THREE.PerspectiveCamera(75, containerWidth / containerHeight, 0.1, 1000);
   camera.position.z = 30;
 
   const renderer = new THREE.WebGLRenderer({
-    canvas: document.getElementById("animation-canvas"),
+    canvas: canvas,
     antialias: true,
     alpha: true
   });
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(containerWidth, containerHeight);
   renderer.setClearColor(0x000000, 1);
 
   /* ===== 星空 ===== */
@@ -315,17 +330,22 @@ document.addEventListener("DOMContentLoaded", () => {
   scene.add(ring);
 
   /* ===== 自适应大小 ===== */
-  addEventListener("resize", () => {
-    camera.aspect = innerWidth / innerHeight;
+  function updateSize() {
+    const width = canvasContainer.clientWidth;
+    const height = canvasContainer.clientHeight;
+    
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  });
+    renderer.setSize(width, height);
+  }
+  
+  window.addEventListener('resize', updateSize);
 
   /* ===== 鼠标视差 ===== */
   let mouseX = 0, mouseY = 0;
-  addEventListener("mousemove", e => {
-    mouseX = (e.clientX - innerWidth  / 2) * 0.0005;
-    mouseY = (e.clientY - innerHeight / 2) * 0.0005;
+  document.addEventListener("mousemove", e => {
+    mouseX = (e.clientX - canvasContainer.clientWidth  / 2) * 0.0005;
+    mouseY = (e.clientY - canvasContainer.clientHeight / 2) * 0.0005;
   });
 
   /* ===== 动画循环 ===== */
@@ -389,6 +409,9 @@ document.addEventListener("DOMContentLoaded", () => {
     ring.rotation.z += 0.003;
     renderer.render(scene, camera);
   }
+  
+  // 立即调整大小并开始动画
+  updateSize();
   animate();
 });
 

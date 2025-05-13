@@ -175,9 +175,13 @@ def get_document_rules(
         规则字典
     """
     if doc_type not in config:
-        print(f"Error: Unknown document type '{doc_type}'")
-        print(f"Available document types: {', '.join(config.keys())}")
-        sys.exit(1)
+        if 'default' in config:
+            print(f"Warning: Unknown document type '{doc_type}', using default rules")
+            doc_type = 'default'
+        else:
+            print(f"Error: Unknown document type '{doc_type}' and no default rules found")
+            print(f"Available document types: {', '.join(config.keys())}")
+            sys.exit(1)
     
     type_rules = config[doc_type]
     

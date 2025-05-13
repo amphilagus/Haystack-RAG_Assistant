@@ -94,6 +94,9 @@ def upload_file():
         use_llm = request.form.get('use_llm', 'on')
         clean_md = request.form.get('clean_md', 'off')
         
+        # 默认不保持原文件名
+        keep_original_filename = request.form.get('keep_original_filename', 'off')
+        
         # 处理标签
         tag_list = [tag.strip() for tag in tags.split(',')] if tags else []
         tag_list = [tag for tag in tag_list if tag]  # 移除空标签
@@ -103,8 +106,18 @@ def upload_file():
         for file in files:
             if file and file.filename:
                 # 安全处理文件名
-                filename = secure_filename(file.filename)
-                
+                logger.debug(f"original filename = {file.filename}")
+                # 处理中文文件名问题
+                if keep_original_filename == 'on':
+                    # 如果选择保持原文件名，使用原始文件名但确保路径安全
+                    filename = file.filename
+                    # 移除可能导致路径问题的字符，但保留中文
+                    filename = filename.replace('/', '_').replace('\\', '_')
+                else:
+                    # 使用secure_filename处理，但这会移除中文字符
+                    filename = secure_filename(file.filename)
+
+                logger.debug(f"processed filename = {filename}")
                 # 创建临时目录（如果不存在）
                 temp_dir = os.path.join(tempfile.gettempdir(), 'amphilagus_uploads')
                 os.makedirs(temp_dir, exist_ok=True)
@@ -130,7 +143,8 @@ def upload_file():
                 'tags': tag_list,
                 'description': description,
                 'use_llm': use_llm,
-                'clean_md': clean_md
+                'clean_md': clean_md,
+                'keep_original_filename': keep_original_filename
             }
         )
         
@@ -306,48 +320,92 @@ def manage_file_tags(filename):
 
 @files_bp.route('/<filename>/details')
 def file_details(filename):
-    """通过重定向在新页面查看文件"""
+    """在新页面查看文件详情，显示备份文件和摘要文件"""
     file_metadata = manager.file.get_file_metadata(filename)
     
     if not file_metadata:
         flash(f'文件 {filename} 不存在')
         return redirect(url_for('files.list_files'))
     
-    # 重定向到新的文件查看页面路由
-    return redirect(url_for('files.view_backup_files', filename=filename))
-
-@files_bp.route('/<filename>/view')
-def view_backup_files(filename):
-    """在新页面中查看备份文件"""
     # 获取文件名（不含扩展名）
     filename_no_ext = os.path.splitext(filename)[0]
+    file_type = os.path.splitext(filename)[1][1:].upper()  # 获取扩展名，去掉.并转为大写
     
-    # 查找同名文件（可能有不同的扩展名）
-    matching_files = []
+    # 1. 查找备份文件
+    backup_file = None
+    backup_url = None
     if os.path.exists(config.BACKUP_FILES_PATH):
         for f in os.listdir(config.BACKUP_FILES_PATH):
             if os.path.splitext(f)[0] == filename_no_ext:
-                matching_files.append(f)
+                backup_file = f
+                backup_url = url_for('files.view_backup_file', filename=backup_file)
+                break
     
-    # 如果找到多个文件，报错
-    if len(matching_files) > 1:
-        flash(f'在backup_files中找到多个同名文件: {", ".join(matching_files)}', 'error')
+    # 2. 查找摘要文件
+    sum_file = None
+    sum_url = None
+    md_content = None
+    if os.path.exists(config.SUM_FILES_PATH):
+        for f in os.listdir(config.SUM_FILES_PATH):
+            if os.path.splitext(f)[0] == filename_no_ext:
+                sum_file = f
+                sum_url = url_for('files.view_sum_file', filename=sum_file)
+                
+                # 读取Markdown内容
+                try:
+                    from markdown import markdown
+                    md_file_path = os.path.join(config.SUM_FILES_PATH, f)
+                    with open(md_file_path, 'r', encoding='utf-8') as md_file:
+                        md_text = md_file.read()
+                        # 将Markdown转换为HTML
+                        md_content = markdown(md_text, extensions=['extra', 'codehilite'])
+                except Exception as e:
+                    logger.error(f"读取或转换Markdown文件时出错: {str(e)}")
+                    md_content = f"<div class='alert alert-danger'>读取或转换Markdown文件时出错: {str(e)}</div>"
+                
+                break
+    
+    # 渲染模板
+    return render_template('file_viewer.html', 
+                          filename=filename,
+                          file_type=file_type,
+                          file_metadata=file_metadata,
+                          backup_file=backup_file,
+                          backup_url=backup_url,
+                          sum_file=sum_file,
+                          sum_url=sum_url,
+                          md_content=md_content)
+
+@files_bp.route('/backup/<filename>')
+def view_backup_file(filename):
+    """查看备份文件"""
+    file_path = os.path.join(config.BACKUP_FILES_PATH, filename)
+    
+    if not os.path.exists(file_path):
+        flash(f'备份文件 {filename} 不存在', 'error')
         return redirect(url_for('files.list_files'))
-    
-    # 如果没有找到文件，显示错误
-    if not matching_files:
-        flash(f'在backup_files中未找到{filename_no_ext}的文件', 'error')
-        return redirect(url_for('files.list_files'))
-    
-    # 构建完整文件路径
-    file_path = os.path.join(config.BACKUP_FILES_PATH, matching_files[0])
-    backup_filesname = matching_files[0]
     
     # 发送文件
     try:
         return send_file(file_path, as_attachment=False)
     except Exception as e:
-        flash(f'打开文件时出错: {str(e)}', 'error')
+        flash(f'打开备份文件时出错: {str(e)}', 'error')
+        return redirect(url_for('files.list_files'))
+
+@files_bp.route('/sum/<filename>')
+def view_sum_file(filename):
+    """查看摘要文件"""
+    file_path = os.path.join(config.SUM_FILES_PATH, filename)
+    
+    if not os.path.exists(file_path):
+        flash(f'摘要文件 {filename} 不存在', 'error')
+        return redirect(url_for('files.list_files'))
+    
+    # 发送文件
+    try:
+        return send_file(file_path, as_attachment=False)
+    except Exception as e:
+        flash(f'打开摘要文件时出错: {str(e)}', 'error')
         return redirect(url_for('files.list_files'))
 
 @files_bp.route('/<filename>/update_description', methods=['POST'])

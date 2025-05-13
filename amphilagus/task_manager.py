@@ -259,7 +259,7 @@ class TaskManager:
                 continue
             
             if not config.allowed_file(filename):
-                logger.warning(f"不支持的文件类型: {filename}")
+                logger.error(f"不支持的文件类型: {filename}")
                 results['error'].append({
                     "filename": filename,
                     "message": f"不支持的文件类型 ({filename})"
@@ -298,63 +298,72 @@ class TaskManager:
                     meta_json_path = os.path.join(temp_output_dir, base_name, f"{base_name}_meta.json")
                     
                     logger.debug(f"查找生成的文件: MD={md_file_path}, Meta={meta_json_path}")
-                    
-                    # 如果meta.json文件存在，提取标题
-                    if os.path.exists(meta_json_path):
-                        try:
-                            with open(meta_json_path, 'r', encoding='utf-8') as f:
-                                meta_data = json.load(f)
-                                # 确定使用哪种标题提取策略
-                                method = "first_non_empty"  # 目前只支持first_non_empty方法
-                                journal = "default"  # 默认期刊配置
-                                
-                                # 查找匹配的期刊类型标签
-                                # 创建小写版本的配置键映射到原始键
-                                journals = config.TITLE_EXTRACTOR_CONFIG.get(method, {}).get("journals", {})
-                                lowercase_journal_keys = {k.lower(): k for k in journals.keys()}
-                                
-                                for tag in tags:
-                                    # 检查标签是否是已配置的期刊类型（忽略大小写）
-                                    if tag.lower() in lowercase_journal_keys:
-                                        # 使用原始大小写的配置键
-                                        journal = lowercase_journal_keys[tag.lower()]
-                                        logger.debug(f"找到匹配的期刊: {journal}")
-                                        break
-                                
-                                # 获取策略配置
-                                journal_config = journals.get(journal, journals.get("default", {}))
-                                start_index = journal_config.get("start_index", 0)
-                                logger.info(f"使用标题提取方法: {method}, 期刊: {journal}, 起始索引: {start_index} ({journal_config.get('description', '无描述')})")
-                                
-                                # 基于策略提取标题
-                                title = base_name  # 默认使用基本文件名
-                                
-                                # 从目录中提取标题，使用start_index参数
-                                if meta_data.get('table_of_contents') and len(meta_data['table_of_contents']) > 0:
-                                    # 找出所有非空标题
-                                    non_empty_titles = []
-                                    for toc_item in meta_data['table_of_contents']:
-                                        raw_title = toc_item.get('title', '')
-                                        if raw_title and raw_title.strip():
-                                            non_empty_titles.append(raw_title)
-                                    
-                                    # 根据start_index获取标题
-                                    if len(non_empty_titles) > start_index:
-                                        # 处理标题，移除换行符
-                                        raw_title = non_empty_titles[start_index]
-                                        title = raw_title.replace('\n', ' ').strip()
-                                        logger.debug(f"从meta.json提取到标题 (索引 {start_index}): {title}")
-                                    else:
-                                        logger.warning(f"meta.json中找不到索引为 {start_index} 的非空标题，使用默认标题: {title}")
-                                else:
-                                    logger.warning(f"meta.json中没有table_of_contents或为空，使用默认标题: {title}")
-                        except (json.JSONDecodeError, KeyError, IndexError) as e:
-                            logger.error(f"从meta.json提取标题时出错: {str(e)}")
-                            title = base_name
+
+                    # 检查是否保持原文件名
+                    keep_original_filename = task.params.get('keep_original_filename', 'off') == 'on'
+                    if keep_original_filename:
+                        title = base_name
+                        logger.info(f"由于设置了保持原文件名选项，使用原文件名: {base_name}")
                     else:
-                        # 直接报错 终止程序
-                        logger.error(f"未找到meta.json文件，理论路径为：{meta_json_path}，临时目录：{temp_output_dir}")
-                        raise ValueError(f"未找到meta.json文件，理论路径为：{meta_json_path}，临时目录：{temp_output_dir}")
+                        # 如果meta.json文件存在，提取标题
+                        if os.path.exists(meta_json_path):
+                            try:
+                                with open(meta_json_path, 'r', encoding='utf-8') as f:
+                                    meta_data = json.load(f)
+                                    # 确定使用哪种标题提取策略
+                                    method = "first_non_empty"  # 目前只支持first_non_empty方法
+                                    journal = "default"  # 默认期刊配置
+                                    
+                                    # 查找匹配的期刊类型标签
+                                    # 创建小写版本的配置键映射到原始键
+                                    journals = config.TITLE_EXTRACTOR_CONFIG.get(method, {}).get("journals", {})
+                                    lowercase_journal_keys = {k.lower(): k for k in journals.keys()}
+                                    
+                                    for tag in tags:
+                                        # 检查标签是否是已配置的期刊类型（忽略大小写）
+                                        if tag.lower() in lowercase_journal_keys:
+                                            # 使用原始大小写的配置键
+                                            journal = lowercase_journal_keys[tag.lower()]
+                                            logger.debug(f"找到匹配的期刊: {journal}")
+                                            break
+                                    
+                                    # 获取策略配置
+                                    journal_config = journals.get(journal, journals.get("default", {}))
+                                    start_index = journal_config.get("start_index", 0)
+                                    logger.info(f"使用标题提取方法: {method}, 期刊: {journal}, 起始索引: {start_index} ({journal_config.get('description', '无描述')})")
+                                    
+                                    # 基于策略提取标题
+                                    title = base_name  # 默认使用基本文件名
+                                    
+                                    # 从目录中提取标题，使用start_index参数
+                                    if meta_data.get('table_of_contents') and len(meta_data['table_of_contents']) > 0:
+                                        # 找出所有非空标题
+                                        non_empty_titles = []
+                                        for toc_item in meta_data['table_of_contents']:
+                                            raw_title = toc_item.get('title', '')
+                                            if raw_title and raw_title.strip():
+                                                non_empty_titles.append(raw_title)
+                                        
+                                        # 根据start_index获取标题
+                                        if len(non_empty_titles) > start_index:
+                                            # 处理标题，移除换行符
+                                            raw_title = non_empty_titles[start_index]
+                                            # 如果当前标题包含"article"，则尝试使用下一个标题
+                                            if "article" in raw_title.lower() and start_index + 1 < len(non_empty_titles):
+                                                raw_title = non_empty_titles[start_index+1]
+                                            title = raw_title.replace('\n', ' ').strip()
+                                            logger.debug(f"从meta.json提取到标题 (索引 {start_index}): {title}")
+                                        else:
+                                            logger.warning(f"meta.json中找不到索引为 {start_index} 的非空标题，使用默认标题: {title}")
+                                    else:
+                                        logger.warning(f"meta.json中没有table_of_contents或为空，使用默认标题: {title}")
+                            except (json.JSONDecodeError, KeyError, IndexError) as e:
+                                logger.error(f"从meta.json提取标题时出错: {str(e)}")
+                                title = base_name
+                        else:
+                            # 直接报错 终止程序
+                            logger.error(f"未找到meta.json文件，理论路径为：{meta_json_path}，临时目录：{temp_output_dir}")
+                            raise ValueError(f"未找到meta.json文件，理论路径为：{meta_json_path}，临时目录：{temp_output_dir}")
                         
                     # 安全处理标题，去除非法字符
                     safe_title = secure_filename(title)

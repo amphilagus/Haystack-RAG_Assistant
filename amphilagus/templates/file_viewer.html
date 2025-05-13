@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+
+{% block title %}文件查看器 - {{ filename }}{% endblock %}
+
+{% block styles %}
+<style>
+    /* Markdown样式 */
+    #markdown-content {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        line-height: 1.6;
+    }
+    #markdown-content h1, 
+    #markdown-content h2, 
+    #markdown-content h3, 
+    #markdown-content h4, 
+    #markdown-content h5, 
+    #markdown-content h6 {
+        margin-top: 24px;
+        margin-bottom: 16px;
+        font-weight: 600;
+        line-height: 1.25;
+    }
+    #markdown-content h1 { font-size: 2em; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }
+    #markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }
+    #markdown-content h3 { font-size: 1.25em; }
+    #markdown-content p, 
+    #markdown-content blockquote, 
+    #markdown-content ul, 
+    #markdown-content ol, 
+    #markdown-content dl, 
+    #markdown-content table, 
+    #markdown-content pre {
+        margin-top: 0;
+        margin-bottom: 16px;
+    }
+    #markdown-content code {
+        font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+        background-color: rgba(27, 31, 35, 0.05);
+        padding: 0.2em 0.4em;
+        border-radius: 3px;
+    }
+    #markdown-content pre {
+        font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+        padding: 16px;
+        overflow: auto;
+        line-height: 1.45;
+        background-color: #f6f8fa;
+        border-radius: 3px;
+    }
+    #markdown-content pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+    #markdown-content table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    #markdown-content table th,
+    #markdown-content table td {
+        padding: 6px 13px;
+        border: 1px solid #dfe2e5;
+    }
+    #markdown-content table tr {
+        background-color: #fff;
+        border-top: 1px solid #c6cbd1;
+    }
+    #markdown-content table tr:nth-child(2n) {
+        background-color: #f6f8fa;
+    }
+    #markdown-content blockquote {
+        padding: 0 1em;
+        color: #6a737d;
+        border-left: 0.25em solid #dfe2e5;
+    }
+    
+    /* 文件查看器页面特殊样式 */
+    .viewer-container {
+        /* 确保不会覆盖页脚，保留更多底部间距 */
+        height: calc(100vh - 180px);
+        margin-bottom: 20px;
+        max-height: 100%;
+    }
+    
+    /* 确保页脚可见 */
+    #content-wrapper {
+        padding-bottom: 60px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-2">
+    <a href="{{ url_for('files.list_files') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i>返回
+    </a>
+</div>
+
+<div class="row viewer-container">
+    {% if backup_file %}
+    <div class="col-md-7 mb-3">
+        <div class="card h-100">
+            <div class="card-header py-2">
+                <h6 class="card-title mb-0">原始文件</h6>
+            </div>
+            <div class="card-body p-0">
+                <iframe id="backup-viewer" class="w-100 h-100" style="border: none;" src="{{ backup_url }}"></iframe>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if sum_file %}
+    <div class="col-md-{% if backup_file %}5{% else %}12{% endif %} mb-3">
+        <div class="card h-100">
+            <div class="card-header py-2">
+                <h6 class="card-title mb-0">Markdown文件</h6>
+            </div>
+            <div class="card-body p-0">
+                <div id="markdown-content" class="p-3 overflow-auto h-100">
+                    {% if md_content %}
+                        {{ md_content|safe }}
+                    {% else %}
+                        <div class="alert alert-warning">无法加载Markdown内容</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if not backup_file and not sum_file %}
+    <div class="col-12">
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>未找到关联的备份文件或摘要文件
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        {% if sum_file %}
+        // 设置Markdown查看器
+        const mdViewer = document.getElementById('markdown-viewer');
+        const mdPath = '{{ sum_url }}';
+        
+        // 创建HTML头部
+        let htmlContent = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>';
+        
+        // 添加CSS样式
+        htmlContent += 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;padding:20px;max-width:100%;margin:0 auto;overflow-y:auto;}';
+        htmlContent += 'h1,h2,h3,h4,h5,h6{margin-top:24px;margin-bottom:16px;font-weight:600;line-height:1.25;}';
+        htmlContent += 'h1{font-size:2em;}h2{font-size:1.5em;}h3{font-size:1.25em;}';
+        htmlContent += 'p,blockquote,ul,ol,dl,table,pre{margin-top:0;margin-bottom:16px;}';
+        htmlContent += 'code{font-family:SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;background-color:rgba(27,31,35,0.05);padding:0.2em 0.4em;border-radius:3px;}';
+        htmlContent += 'pre{font-family:SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;padding:16px;overflow:auto;line-height:1.45;background-color:#f6f8fa;border-radius:3px;}';
+        htmlContent += 'pre code{background-color:transparent;padding:0;}';
+        
+        // 添加脚本和正文
+        htmlContent += '</style>';
+        htmlContent += '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"><\/script>';
+        htmlContent += '</head><body><div id="content">加载中...</div>';
+        
+        // 添加加载脚本
+        htmlContent += '<script>';
+        htmlContent += 'function loadMarkdown(){';
+        htmlContent += 'var xhr=new XMLHttpRequest();';
+        htmlContent += 'xhr.open("GET","' + mdPath + '",true);';
+        htmlContent += 'xhr.onreadystatechange=function(){';
+        htmlContent += 'if(xhr.readyState===4){';
+        htmlContent += 'if(xhr.status===200){';
+        htmlContent += 'document.getElementById("content").innerHTML=marked.parse(xhr.responseText);';
+        htmlContent += '}else{';
+        htmlContent += 'document.getElementById("content").innerHTML="<h1>加载Markdown错误</h1><p>状态码: "+xhr.status+"</p>";';
+        htmlContent += '}}}';
+        htmlContent += 'xhr.onerror=function(){';
+        htmlContent += 'document.getElementById("content").innerHTML="<h1>加载Markdown错误</h1><p>网络错误或文件未找到。</p>";';
+        htmlContent += '};';
+        htmlContent += 'xhr.send();';
+        htmlContent += '}';
+        htmlContent += 'window.onload=loadMarkdown;';
+        htmlContent += '<\/script></body></html>';
+        
+        // 设置HTML内容
+        mdViewer.srcdoc = htmlContent;
+        {% endif %}
+    });
+</script>
+{% endblock %} 

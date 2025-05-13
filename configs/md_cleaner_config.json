@@ -1,4 +1,14 @@
 {
+  "default":{
+    "1": {
+      "start": "# References",
+      "end": null
+    },
+    "2": {
+      "start": "*REFERENCES*",
+      "end": null
+    }
+  },
   "jctc": {
     "remove_everything_after_main_content": {
       "start": "ASSOCIATED CONTENT",

@@ -58,9 +58,13 @@
                 <input class="form-check-input" type="checkbox" id="useLLM" name="use_llm" checked>
                 <label class="form-check-label" for="useLLM">使用 LLM 增强 PDF 转换</label>
               </div>
-              <div class="form-check">
+              <div class="form-check mb-2">
                 <input class="form-check-input" type="checkbox" id="cleanMD" name="clean_md" checked>
                 <label class="form-check-label" for="cleanMD">清理生成的 Markdown 文件</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="keepOriginalFilename" name="keep_original_filename">
+                <label class="form-check-label" for="keepOriginalFilename">保持原文件名（不从内容提取标题）</label>
               </div>
             </div>
           </div>

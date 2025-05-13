@@ -326,6 +326,24 @@
                                 为学术陈述自动添加相关文献引用
                             </div>
                         </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="assistantType" id="typeSum" value="summary">
+                            <label class="form-check-label" for="typeSum">
+                                <i class="fas fa-file-alt me-1"></i> 文章总结助手
+                            </label>
+                            <div class="assistant-type-description">
+                                全方位总结文章的研究背景、方法、目标、内容、结论和亮点
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="assistantType" id="typeChat" value="chat">
+                            <label class="form-check-label" for="typeChat">
+                                <i class="fas fa-comments me-1"></i> 聊天助手
+                            </label>
+                            <div class="assistant-type-description">
+                                智能组合多种工具，提供对话式文献分析与研究支持
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 集合选择 -->
@@ -465,6 +483,10 @@
             const selectedType = document.querySelector('input[name="assistantType"]:checked').value;
             if (selectedType === 'reference') {
                 userInput.placeholder = "输入您的学术陈述，系统将为其添加引用...";
+            } else if (selectedType === 'summary') {
+                userInput.placeholder = "输入文章标题，系统将全方位总结文章内容...";
+            } else if (selectedType === 'chat') {
+                userInput.placeholder = "输入您的需求，我可以调用多种工具帮助您...";
             } else {
                 userInput.placeholder = "输入您的问题...";
             }
@@ -511,6 +533,45 @@
         
         // 发送消息
         sendMessageBtn.addEventListener('click', sendMessage);
+        
+        // 定义发送消息函数
+        function sendMessage() {
+            // 检查是否有激活的助手
+            if (!activeAgentId || !agents[activeAgentId]) {
+                showToast('请先创建或选择一个智能助手', 'warning');
+                return;
+            }
+            
+            // 获取输入内容
+            const text = userInput.value.trim();
+            if (!text) {
+                return;  // 忽略空消息
+            }
+            
+            // 获取聊天容器
+            const chatContainer = document.getElementById(`chat_${activeAgentId}`);
+            
+            // 添加用户消息到UI
+            const messageElem = document.createElement('div');
+            messageElem.className = 'message-wrapper user-wrapper';
+            messageElem.innerHTML = `
+                <div class="user-message-container">
+                    <div class="user-avatar">👤</div>
+                    <div class="message-content user-message">
+                        <div>${text}</div>
+                    </div>
+                </div>
+                <div class="message-time">${getCurrentTime()}</div>
+            `;
+            chatContainer.appendChild(messageElem);
+            
+            // 滚动到底部
+            scrollToBottom(chatContainer);
+            
+            // 处理消息
+            const agent = agents[activeAgentId];
+            processMessage(text, agent.collection, agent.model, agent.topK, agent.debugMode, agent.assistantType);
+        }
         
         // 按Enter键发送消息
         userInput.addEventListener('keydown', function(e) {
@@ -599,6 +660,32 @@
             let welcomeText = "";
             if (assistantType === 'reference') {
                 welcomeText = `我是基于 ${collectionName} 集合的引用助手，可以为学术陈述添加相关文献引用。`;
+            } else if (assistantType === 'summary') {
+                welcomeText = `
+                    <p>我是基于 ${collectionName} 集合的文章总结助手，输入<strong>文章标题</strong>后，我将全方位总结文章的：</p>
+                    <ul class="mb-0">
+                        <li>研究背景 (背景)</li>
+                        <li>研究方法 (方法)</li>
+                        <li>研究目标 (目标)</li>
+                        <li>研究内容 (内容)</li>
+                        <li>主要结论 (结论)</li>
+                        <li>研究亮点 (亮点)</li>
+                        <li>接收时间</li>
+                        <li>研究领域</li>
+                    </ul>
+                `;
+            } else if (assistantType === 'chat') {
+                welcomeText = `
+                    <p>我是基于 ${collectionName} 集合的聊天助手，能够智能调用多种专业工具来满足您的研究需求：</p>
+                    <ul class="mb-0">
+                        <li>查看集合中的文章列表</li>
+                        <li>生成特定文章的详细总结</li>
+                        <li>为学术文本添加引用</li>
+                        <li>回答关于集合内容的问题</li>
+                        <li>批量总结文章</li>
+                    </ul>
+                    <p class="mt-2 mb-0">您可以直接用自然语言告诉我您需要做什么，例如"帮我总结《量子计算》这篇文章"或"帮我给这段话添加引用"。</p>
+                `;
             } else {
                 welcomeText = `我是基于 ${collectionName} 集合的智能助手，有什么可以帮您的吗？`;
             }
@@ -642,154 +729,42 @@
             document.getElementById(`tab_${agentId}`).classList.add('active');
             document.getElementById(`chat_${agentId}`).classList.remove('hidden');
             
-            // 更新当前助手信息
-            updateAgentInfo(agentId);
-            
-            // 根据助手类型更新输入框提示
-            const agent = agents[agentId];
-            if (agent.assistantType === 'reference') {
-                userInput.placeholder = "输入您的学术陈述，系统将为其添加引用...";
-            } else {
-                userInput.placeholder = "输入您的问题...";
-            }
-            
-            // 聚焦输入框
-            userInput.focus();
-        }
-        
-        // 更新助手信息面板
-        function updateAgentInfo(agentId) {
-            const agent = agents[agentId];
-            if (!agent) return;
-            
-            // 显示助手类型标志
-            const typeLabel = agent.assistantType === 'reference' ? 
-                '<span class="badge bg-info">引用助手</span>' : 
-                '<span class="badge bg-primary">问答助手</span>';
-            
-            currentAgentInfo.innerHTML = `
-                <div class="d-flex gap-2 align-items-center">
-                    <span>${agent.name} ${typeLabel}</span>
-                    <span class="badge bg-primary">集合: ${agent.collection}</span>
-                    <span class="badge bg-secondary">模型: ${agent.model}</span>
-                    <span class="badge bg-info">结果数量: ${agent.topK}</span>
-                    ${agent.debugMode ? '<span class="badge bg-warning">调试模式</span>' : ''}
-                </div>
-            `;
+            // 滚动到底部
+            scrollToBottom(document.getElementById(`chat_${agentId}`));
         }
         
         // 移除助手
         function removeAgent(agentId) {
-            if (!confirm('确定要关闭这个智能助手吗？')) {
-                return;
+            // 找到标签和聊天容器
+            const tab = document.getElementById(`tab_${agentId}`);
+            const chatContainer = document.getElementById(`chat_${agentId}`);
+            
+            // 如果标签存在，移除标签
+            if (tab) {
+                tab.remove();
             }
             
-            // 移除标签和聊天容器
-            document.getElementById(`tab_${agentId}`).remove();
-            document.getElementById(`chat_${agentId}`).remove();
+            // 如果聊天容器存在，清空聊天容器
+            if (chatContainer) {
+                chatContainer.innerHTML = '';
+            }
             
-            // 从存储中移除
+            // 移除助手信息
             delete agents[agentId];
             
-            // 如果移除的是当前活动助手
-            if (agentId === activeAgentId) {
-                // 找到下一个可用的助手
-                const remainingIds = Object.keys(agents);
-                if (remainingIds.length > 0) {
-                    activateAgent(remainingIds[0]);
-                } else {
-                    // 没有剩余助手
-                    activeAgentId = null;
-                    userInput.disabled = true;
-                    sendMessageBtn.disabled = true;
-                    noAgentPlaceholder.classList.remove('hidden');
-                    currentAgentInfo.innerHTML = `
-                        <div class="placeholder-message text-muted small">
-                            <span>请创建或选择一个智能助手</span>
-                        </div>
-                    `;
-                }
+            // 如果移除的是活动助手，重置活动助手
+            if (activeAgentId === agentId) {
+                activeAgentId = null;
+                document.getElementById('currentAgentInfo').innerHTML = '<div class="placeholder-message text-muted small"><span>请创建或选择一个智能助手</span></div>';
             }
-        }
-        
-        // 发送消息
-        function sendMessage() {
-            const text = userInput.value.trim();
-            if (!text || !activeAgentId) return;
             
-            const agent = agents[activeAgentId];
-            const chatContainer = document.getElementById(`chat_${activeAgentId}`);
-            
-            // 添加用户消息到UI
-            const userMessageElem = document.createElement('div');
-            userMessageElem.className = 'message-wrapper user-wrapper';
-            
-            // 判断是单行还是多行消息
-            const isSingleLine = !text.includes('\n') && text.length < 80; // 大约80个字符作为单行的判断标准
-            
-            userMessageElem.innerHTML = `
-                <div class="user-message-container ${isSingleLine ? 'text-end' : ''}">
-                    <div class="user-avatar">👤</div>
-                    <div class="message-content user-message ${isSingleLine ? 'text-end' : ''}">
-                        ${text}
-                    </div>
-                </div>
-                <div class="message-time">${getCurrentTime()}</div>
-            `;
-            chatContainer.appendChild(userMessageElem);
-            
-            // 处理消息
-            processMessage(text, agent.collection, agent.model, agent.topK, agent.debugMode, agent.assistantType);
+            // 显示占位消息
+            noAgentPlaceholder.classList.remove('hidden');
             
             // 滚动到底部
-            scrollToBottom(chatContainer);
+            scrollToBottom(chatArea);
         }
-        
-        // 获取当前时间
-        function getCurrentTime() {
-            return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-        }
-        
-        // 显示提示消息
-        function showToast(message, type = 'info') {
-            // 检查是否已存在toast容器
-            let toastContainer = document.getElementById('toastContainer');
-            if (!toastContainer) {
-                toastContainer = document.createElement('div');
-                toastContainer.id = 'toastContainer';
-                toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
-                document.body.appendChild(toastContainer);
-            }
-            
-            // 创建toast元素
-            const toastId = 'toast-' + Date.now();
-            const toast = document.createElement('div');
-            toast.className = `toast align-items-center text-white bg-${type} border-0`;
-            toast.id = toastId;
-            toast.innerHTML = `
-                <div class="d-flex">
-                    <div class="toast-body">
-                        ${message}
-                    </div>
-                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-                </div>
-            `;
-            
-            toastContainer.appendChild(toast);
-            
-            // 初始化并显示toast
-            const toastObj = new bootstrap.Toast(toast, {
-                autohide: true,
-                delay: 3000
-            });
-            toastObj.show();
-            
-            // 监听关闭事件，移除DOM元素
-            toast.addEventListener('hidden.bs.toast', function () {
-                toast.remove();
-            });
-        }
-        
+
         // 处理消息函数
         function processMessage(text, collectionName, model, topK, debugMode, assistantType) {
             // 清空输入框
@@ -815,9 +790,16 @@
             scrollToBottom(chatContainer);
             
             // 根据助手类型选择API端点
-            const apiEndpoint = assistantType === 'reference' ? 
-                '/agent_assistant/collection_ref' : 
-                '/agent_assistant/collection_qa';
+            let apiEndpoint;
+            if (assistantType === 'reference') {
+                apiEndpoint = '/agent_assistant/collection_ref';
+            } else if (assistantType === 'summary') {
+                apiEndpoint = '/agent_assistant/collection_sum';
+            } else if (assistantType === 'chat') {
+                apiEndpoint = '/agent_assistant/collection_chat';
+            } else {
+                apiEndpoint = '/agent_assistant/collection_qa';
+            }
             
             // 发送到后端
             fetch(apiEndpoint, {
@@ -957,6 +939,51 @@
                 chatContainer.appendChild(errorElem);
                 scrollToBottom(chatContainer);
                 console.error('Error:', error);
+            });
+        }
+        
+        // 获取当前时间
+        function getCurrentTime() {
+            return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        // 显示提示消息
+        function showToast(message, type = 'info') {
+            // 检查是否已存在toast容器
+            let toastContainer = document.getElementById('toastContainer');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.id = 'toastContainer';
+                toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+                document.body.appendChild(toastContainer);
+            }
+            
+            // 创建toast元素
+            const toastId = 'toast-' + Date.now();
+            const toast = document.createElement('div');
+            toast.className = `toast align-items-center text-white bg-${type} border-0`;
+            toast.id = toastId;
+            toast.innerHTML = `
+                <div class="d-flex">
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                </div>
+            `;
+            
+            toastContainer.appendChild(toast);
+            
+            // 初始化并显示toast
+            const toastObj = new bootstrap.Toast(toast, {
+                autohide: true,
+                delay: 3000
+            });
+            toastObj.show();
+            
+            // 监听关闭事件，移除DOM元素
+            toast.addEventListener('hidden.bs.toast', function () {
+                toast.remove();
             });
         }
     });

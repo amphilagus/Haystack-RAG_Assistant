@@ -6,11 +6,14 @@ This module provides tools that can be used by the Haystack agent to interact wi
 
 from typing import List, Dict, Any, Annotated, Optional
 import logging
+import os
+import pathlib
 
 from .. import manager
 
 # 获取日志记录器
 logger = logging.getLogger(__name__)
+
 
 def run_embedding_search(
     collection_name: Annotated[str, "Name of the collection to search in"],
@@ -63,6 +66,10 @@ def run_embedding_search(
                 "top_k": query.get("top_k", top_k),
                 "only_most_related_articles": query.get("only_most_related_articles", False)
             }
+            title = query.get("title", False)
+            if title:
+                query_config["title"] = title
+
             formatted_queries.append(query_config)
         else:
             raise ValueError(f"Invalid query format: {query}")
@@ -96,6 +103,84 @@ def run_embedding_search(
             "error": f"Error running batch queries: {str(e)}",
             "collection_name": collection_name,
             "results": []
+        }
+
+def get_collection_titles(
+    collection_name: Annotated[str, "Name of the collection to retrieve titles from"],
+) -> Dict[str, Any]:
+    """
+    Retrieve a list of all unique document titles from a specified collection.
+    
+    This tool fetches all unique titles from documents stored in the specified collection.
+    It's useful for getting an overview of available documents or for filtering searches by title.
+    
+    Args:
+        collection_name: Name of the collection to retrieve titles from
+    
+    Returns:
+        Dictionary containing the collection name, list of unique titles, and title count
+    
+    Example:
+        Calling this tool with:
+        {
+            "collection_name": "research_papers"
+        }
+        
+        Returns:
+        {
+            "collection_name": "research_papers",
+            "titles": ["Quantum Computing Basics", "Neural Networks in Medicine", ...],
+            "title_count": 25
+        }
+    """
+    try:
+        # Get the pipeline for the specified collection
+        pipeline = manager.pipeline.get_pipeline(
+            pipeline_type="embedding",
+            collection_name=collection_name,
+            create_if_missing=True
+        )
+        
+        if not pipeline:
+            return {
+                "error": f"Collection '{collection_name}' not found or could not be accessed",
+                "collection_name": collection_name,
+                "titles": [],
+                "title_count": 0
+            }
+        
+        # Retrieve titles using the pipeline's _cache_all_titles method
+        try:
+            # Call the pipeline's method to get and cache all titles
+            unique_titles = pipeline._cache_all_titles(collection_name)
+            titles = list(unique_titles)
+            
+            # Release pipeline
+            pipeline.busy = False
+            
+            return {
+                "collection_name": collection_name,
+                "titles": titles,
+                "title_count": len(titles)
+            }
+            
+        except Exception as e:
+            pipeline.busy = False
+            logger.error(f"Error retrieving titles: {str(e)}", exc_info=True)
+            return {
+                "error": f"Error retrieving titles: {str(e)}",
+                "collection_name": collection_name,
+                "titles": [],
+                "title_count": 0
+            }
+    
+    except Exception as e:
+        logger.error(f"Error accessing collection: {str(e)}", exc_info=True)
+        return {
+            "error": f"Error accessing collection: {str(e)}",
+            "collection_name": collection_name,
+            "titles": [],
+            "title_count": 0
         }
 
 def format_with_references(
@@ -230,3 +315,5 @@ def format_with_references(
             "main_text": "",
             "references_list": []
         }
+
+

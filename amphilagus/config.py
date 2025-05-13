@@ -33,6 +33,7 @@ CHROMA_DB_PATH = os.path.join(WORKSPACE_DIR, 'chroma_db')
 KNOWLEDGE_DIR = os.path.join(WORKSPACE_DIR, 'knowledge')
 LITERATURE_DATA_PATH = os.path.join(KNOWLEDGE_DIR, 'literature_data.json')
 COLLECTION_METADATA_FILE = os.path.join(WORKSPACE_DIR, 'collection_metadata.json')
+SUM_FILES_PATH = os.path.join(FILES_DIR, 'sum_files')
 
 # 配置文件路径
 MD_CLEANER_CONFIG_PATH = os.path.join(CONFIGS_DIR, 'md_cleaner_config.json')
@@ -60,6 +61,7 @@ os.makedirs(BACKUP_FILES_PATH, exist_ok=True)
 os.makedirs(TASKS_PATH, exist_ok=True)
 os.makedirs(CONFIGS_DIR, exist_ok=True)
 os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
+os.makedirs(SUM_FILES_PATH, exist_ok=True)
 
 # 加载配置文件
 try:
@@ -106,7 +108,7 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf', 'md', 'docx', 'html'}
 def allowed_file(filename):
     """检查文件类型是否允许"""
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS 
+           filename.rsplit('.', 1)[-1].lower() in ALLOWED_EXTENSIONS 
 
 # Try to load from .env file
 load_dotenv(dotenv_path=WORKSPACE_DIR, override=True)

@@ -192,6 +192,24 @@
       "is_base_tag": false,
       "is_preset_tag": false,
       "parent": "期刊类型"
+    },
+    {
+      "name": "PCCP",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "JPCL",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "期刊类型"
+    },
+    {
+      "name": "Carbon",
+      "is_base_tag": false,
+      "is_preset_tag": false,
+      "parent": "期刊类型"
     }
   ],
   "files": [
@@ -239,8 +257,8 @@
       "filename": "Density_functional_theory_and_molecular_dynamics_simulations_for_resistive_switching_research.md",
       "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Density_functional_theory_and_molecular_dynamics_simulations_for_resistive_switching_research.md",
       "tags": [
-        "Materials Science & Engineering R",
-        "忆阻器"
+        "忆阻器",
+        "Materials Science & Engineering R"
       ],
       "description": "由PDF文件自动转换生成，已进行内容清理",
       "additional_info": {}
@@ -281,6 +299,79 @@
       "tags": [
         "忆阻器",
         "Science Advances"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "当代西方国际关系理论_倪世雄.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\当代西方国际关系理论_倪世雄.md",
+      "tags": [],
+      "description": "由PDF文件自动转换生成",
+      "additional_info": {}
+    },
+    {
+      "filename": "Dissolving_salt_is_not_equivalent_to_applying_a_pressure_on_water.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Dissolving_salt_is_not_equivalent_to_applying_a_pressure_on_water.md",
+      "tags": [
+        "分子动力学",
+        "Nature Communications",
+        "机器学习"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Spatiotemporal_characterization_of_water_diffusion_anomalies_in_saline_solutions_using_machine_learning_force_field.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Spatiotemporal_characterization_of_water_diffusion_anomalies_in_saline_solutions_using_machine_learning_force_field.md",
+      "tags": [
+        "分子动力学",
+        "Science Advances",
+        "机器学习"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Quantifying_the_hydration_structure_of_sodium_and_potassium_ions_taking_additional_steps_on_Jacobs_Ladder.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Quantifying_the_hydration_structure_of_sodium_and_potassium_ions_taking_additional_steps_on_Jacobs_Ladder.md",
+      "tags": [
+        "分子动力学",
+        "PCCP",
+        "机器学习"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Understanding_the_Anomalous_Diffusion_of_Water_in_Aqueous_Electrolytes_Using_Machine_Learned_Potentials.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Understanding_the_Anomalous_Diffusion_of_Water_in_Aqueous_Electrolytes_Using_Machine_Learned_Potentials.md",
+      "tags": [
+        "分子动力学",
+        "JPCL",
+        "机器学习"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "Significantly_enhanced_interfacial_thermal_transport_between_single-layer_graphene_and_water_through_basal-plane_oxidation.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\Significantly_enhanced_interfacial_thermal_transport_between_single-layer_graphene_and_water_through_basal-plane_oxidation.md",
+      "tags": [
+        "分子动力学",
+        "机器学习",
+        "Carbon"
+      ],
+      "description": "由PDF文件自动转换生成，已进行内容清理",
+      "additional_info": {}
+    },
+    {
+      "filename": "DPA-2_a_large_atomic_model_as_a_multi-_task_learner.md",
+      "filepath": "E:\\workspace\\amphilagus\\files\\raw_files\\DPA-2_a_large_atomic_model_as_a_multi-_task_learner.md",
+      "tags": [
+        "分子动力学",
+        "Nature Communications",
+        "机器学习"
       ],
       "description": "由PDF文件自动转换生成，已进行内容清理",
       "additional_info": {}

@@ -21,6 +21,14 @@
       "science advances": {
         "start_index": 1,
         "description": "Science Advances期刊：使用第二个非空标题"
+      },
+      "pccp": {
+        "start_index": 3,
+        "description": "PCCP期刊：使用第四个非空标题"
+      },
+      "carbon": {
+        "start_index": 1,
+        "description": "Carbon期刊：使用第二个非空标题"
       }
     }
   }

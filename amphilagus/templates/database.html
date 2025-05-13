@@ -135,11 +135,11 @@
 {% block scripts %}
 <script>
     function confirmDelete(collectionName) {
-        if (confirm(确定要删除Collection "${collectionName}" 吗？此操作不可撤销，相关的所有文档和嵌入向量都将被删除。)) {
+        if (confirm(`确定要删除Collection "${collectionName}" 吗？此操作不可撤销，相关的所有文档和嵌入向量都将被删除。`)) {
             // 创建表单并提交
             const form = document.createElement('form');
             form.method = 'POST';
-            form.action = '/database/' + encodeURIComponent(collectionName) + '/delete';
+            form.action = '/database/collections/' + encodeURIComponent(collectionName) + '/delete';
             document.body.appendChild(form);
             form.submit();
         }

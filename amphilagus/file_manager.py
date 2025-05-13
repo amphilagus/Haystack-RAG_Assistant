@@ -87,8 +87,8 @@ class FileManager:
     """
     Manages raw_files files with a tag-based system.
     """
-    def __init__(self, raw_files_dir: str = 'files/raw_files', metadata_file: str = 'files/raw_files_metadata.json',
-                 backup_files_dir: str = 'files/backup_files'):
+    def __init__(self, raw_files_dir: str = config.RAW_FILES_PATH, metadata_file: str = config.RAW_FILES_METADATA_PATH,
+                 backup_files_dir: str = config.BACKUP_FILES_PATH):
         self.raw_files_dir = Path(raw_files_dir)
         self.backup_files_dir = Path(backup_files_dir)
         self.metadata_file =  metadata_file
@@ -462,9 +462,16 @@ class FileManager:
                 cleaned_content = config.clean_markdown(content, rules)
                 return cleaned_content
             else:
-                logger.info("未找到匹配的期刊类型，不应用清理规则")
+                logger.info("未找到匹配的期刊类型，应用默认清理规则")
                 logger.debug(f"所有标签均未能匹配配置键。标签: {tags}, 可用键: {list(config.MD_CLEANER_CONFIG.keys())}")
-                return content
+                if 'default' in config.MD_CLEANER_CONFIG:
+                    logger.info("使用default规则进行清理")
+                    rules = config.MD_CLEANER_CONFIG['default']
+                    cleaned_content = config.clean_markdown(content, rules)
+                    return cleaned_content
+                else:
+                    logger.warning("未找到default规则，返回原始内容")
+                    return content
         except Exception as e:
             logger.error(f"清理Markdown时出错: {str(e)}")
             # 出错时返回原始内容
